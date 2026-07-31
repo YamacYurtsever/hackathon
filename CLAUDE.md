@@ -55,9 +55,9 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 
 - [X] IR entry, profile, and project schemas drafted
 - [X] Backend repo scaffolded (Flask, Vulture)
-- [ ] Storage layer for entries/projects/profiles (in-memory or file-based is fine for a 1-day build)
-- [ ] Mistral client wrapper + API key wired via `.env`
-- [ ] Seed script: create the MedGuard project and its four example profiles
+- [X] Storage layer for entries/projects/profiles (in-memory, `backend/store.py`)
+- [X] Mistral client wrapper + API key wired via `.env` (`backend/mistral_client.py`)
+- [X] Seed script: create the MedGuard project and its four example profiles (`backend/seed.py`, wired into app startup)
 
 **Frontend**
 
@@ -65,26 +65,48 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 
 ---
 
-### 2. Core Pipeline
+### 2. Membership
+
+Real signup/login: username + password. Once logged in, the acting user is read from the session server-side — endpoints stop trusting a client-supplied user id for "who is doing this."
+
+**Backend**
+
+- [ ] `POST /signup` — username, password, free-text self-description → creates a `Profile` (password hashed, never returned by any endpoint)
+- [ ] `POST /login` / `POST /logout` — verifies password, starts/ends a session (Flask session cookie)
+- [ ] Auth check on protected routes — reject if no logged-in session; acting user = session's profile id, not a body/query param
+- [ ] `GET /profiles/:id` — fetch a profile (no password_hash in the response)
+- [ ] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
+- [ ] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
+- [ ] `POST /projects/:id/promote` — an admin promotes another member to admin
+- [ ] `POST /projects/:id/exit` — removes the logged-in user from `users`/`admins`; if they were the last admin and other members remain, auto-promote one of them
+
+**Frontend**
+
+- [ ] Signup view — username, password, and a text field to describe yourself (becomes `Profile.content`)
+- [ ] Login view
+- [ ] Project creation view
+- [ ] Join-project view
+- [ ] Admin management UI: promote a member, exit the project
+
+---
+
+### 3. Core Pipeline
 
 **Backend**
 
 - [ ] Extraction prompt: NL message → structured IR `content` JSON
-- [ ] `POST /projects/:id/messages` — NL text + author → runs extraction, creates IR entry, appends id to `project.ir_entry_ids`
+- [ ] `POST /projects/:id/messages` — NL text (author = logged-in user) → runs extraction, creates IR entry, appends id to `project.ir_entry_ids`
 - [ ] Re-projection prompt: IR entry `content` + viewer's profile `content` → claim text + grounding path
 - [ ] `GET /projects/:id/view?user_id=` — re-projects every entry in the project for that user's profile, returns claims
-- [ ] `POST /profiles`, `GET /profiles/:id` — create/fetch a profile
-- [ ] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
 - [ ] `GET /projects/:id/changes?since=` — entries with `created_at` after the given timestamp
 
 **Frontend**
 
 - [ ] API client wrapper for the endpoints above
-- [ ] Project creation view
 
 ---
 
-### 3. Wow-Factor
+### 4. Wow-Factor
 
 **Backend**
 
@@ -93,7 +115,7 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 
 **Frontend**
 
-- [ ] Project feed listing IR entries
+- [ ] Project feed: chat-style timeline (time, author, content per row), not raw JSON — this is the "IR" side of the NL/IR toggle
 - [ ] Per-person view — pick a profile, fetch `/projects/:id/view` for it
 - [ ] NL/IR toggle on entries and claims
 - [ ] Grounding citation is clickable — expands/pops up the referenced IR entry
@@ -101,28 +123,25 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 
 ---
 
-### 4. Depth
+### 5. Depth
 
 **Backend**
 
 - [ ] Meaning-preservation pass: prompt checks a claim against its source IR entry, flags drift/invention
 - [ ] Amendment flow: extraction of the proposal + diff against existing entry `content` + apply-on-approval logic
 - [ ] Amendment approval enforced server-side — only a user in `project.admins` can approve/reject, no exceptions
-- [ ] `POST /projects/:id/promote` — an admin promotes another member to admin
-- [ ] `POST /projects/:id/exit` — removes the caller from `users`/`admins`; if they were the last admin and other members remain, auto-promote one of them
 - [ ] Version history: append-only log of `{entry_id, content, author, created_at}` written on every update
   - Potential recovery to old versions?
 
 **Frontend**
 
 - [ ] Amendment proposal UI + admin approval UI
-- [ ] Admin management UI: promote a member, exit the project
 - [ ] Version history view
 - [ ] Attribution UI: show `author` on each entry/claim
 
 ---
 
-### 5. Integration + Polish
+### 6. Integration + Polish
 
 **Backend**
 
@@ -137,7 +156,7 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 
 ---
 
-### 6. Demo Prep
+### 7. Demo Prep
 - [ ] Full scripted MedGuard run-through, timed
 - [ ] Backup plan (recording/screenshots) if live demo fails
 - [ ] Deck finalized

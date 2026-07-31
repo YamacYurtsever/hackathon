@@ -2,13 +2,18 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "profile.schema.json",
   "title": "Profile",
-  "description": "A user's global context — role, expertise, project history, etc. — used to re-project IR entries into a personalized view. Global per user, not scoped to any one project.",
+  "description": "A user's account and global context — used to log in, and to re-project IR entries into a personalized view. Global per user, not scoped to any one project. password_hash is stored here but must never be included in any API response.",
   "type": "object",
   "properties": {
     "id": { "type": "string" },
+    "username": { "type": "string" },
+    "password_hash": {
+      "type": "string",
+      "description": "Hashed password for login. Backend-only — strip before returning a profile from any endpoint."
+    },
     "content": {
       "type": "object",
-      "description": "Free-form: role, self-described expertise, history blurb, whatever re-projection needs. Shape isn't fixed by separate fields.",
+      "description": "Free-form self-description entered at signup: role, expertise, history blurb, whatever re-projection needs. Shape isn't fixed by separate fields.",
       "additionalProperties": true
     }
   }
