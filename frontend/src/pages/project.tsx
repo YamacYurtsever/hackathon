@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { AppLayout } from '@/components/app-layout'
 import { ChangesetDialog } from '@/components/project/changeset-dialog'
 import { Composer } from '@/components/project/composer'
+import { ConflictsDialog } from '@/components/project/conflicts-dialog'
 import { Digest } from '@/components/project/digest'
 import { DocumentDrop } from '@/components/project/document-drop'
 import { DocumentReading, DocumentReview } from '@/components/project/document-review'
@@ -19,6 +20,7 @@ import { refusalFor } from '@/lib/documents'
 import { useAuth } from '@/lib/auth-context'
 import type {
   ChangeRequest,
+  Conflict,
   DocumentResult,
   IREntry,
   InputResult,
@@ -49,6 +51,7 @@ export function ProjectPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [entries, setEntries] = useState<IREntry[]>([])
   const [requests, setRequests] = useState<ChangeRequest[]>([])
+  const [conflicts, setConflicts] = useState<Conflict[]>([])
   const [digest, setDigest] = useState<IREntry[]>([])
   // Split on purpose: an answer is something to read, a proposal is a decision
   // to make, so they get different weight in the UI.
@@ -98,14 +101,16 @@ export function ProjectPage() {
       api.getChanges(projectId),
       api.listRequests(projectId),
       since ? api.getChanges(projectId, since) : Promise.resolve([]),
+      api.listConflicts(projectId),
     ])
-      .then(([loadedProject, loadedMembers, loadedEntries, loadedRequests, since_]) => {
+      .then(([loadedProject, loadedMembers, loadedEntries, loadedRequests, since_, found]) => {
         if (cancelled) return
         setProject(loadedProject)
         setMembers(loadedMembers)
         setEntries(loadedEntries)
         setRequests(loadedRequests)
         setDigest(since_)
+        setConflicts(found)
         // First visit: start the clock rather than claiming everything is new.
         if (!since) localStorage.setItem(lastViewedKey(projectId), new Date().toISOString())
       })
@@ -347,6 +352,32 @@ export function ProjectPage() {
               entries={digest.filter((entry) => !mergedHere.has(entry.id))}
               members={members}
               onDismiss={dismissDigest}
+            />
+            <ConflictsDialog
+              conflicts={conflicts}
+              entriesById={entriesById}
+              members={members}
+              isAdmin={viewerIsAdmin}
+              busy={busy}
+              onEdit={(conflictId, entryId, statement) =>
+                projectId &&
+                run(() =>
+                  api.editConflictingEntry(projectId, conflictId, entryId, {
+                    ...(entriesById.get(entryId)?.content ?? {}),
+                    statement,
+                  }),
+                ).then(refresh)
+              }
+              onDiscard={(conflictId, entryId) =>
+                projectId &&
+                run(() =>
+                  api.discardConflictingEntry(projectId, conflictId, entryId),
+                ).then(refresh)
+              }
+              onDismiss={(conflictId) =>
+                projectId &&
+                run(() => api.dismissConflict(projectId, conflictId)).then(refresh)
+              }
             />
             <PendingRequests
               requests={requests}

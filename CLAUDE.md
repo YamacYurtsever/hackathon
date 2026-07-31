@@ -467,31 +467,33 @@ So conflict is not a bug in the update path, and making updates smarter wouldn't
 
 **When we look.** On merge, and only on merge — the one moment the IR changes. The newly merged entry is checked against the entries already there, so the cost is one call per merge rather than every pair on every read. A conflict that exists between two entries neither of which is being touched was found when the second one landed.
 
-**Resolution is editing the record, which is the hard part.** Merging is currently the only write to the IR, deliberately. Conflict resolution has to change an entry that is already merged, and inventing a second write path would undo that guarantee. Two options, and this needs deciding before it's built:
+**Resolution is editing the record, which was the hard part.** Merging was the only write to the IR, deliberately, and resolution has to change an entry that is already merged.
 
-- **Resolve through the same gate.** An edit becomes a normal `update` request that an admin merges. Honest, and the conflict stays visible until it lands.
-- **Admin edits in place.** Faster and matches "the admin can edit them", but it's a direct write with no proposal, and it needs to be understood as such rather than arrived at by accident.
+**Settled: the admin edits in place.** It is a second write path and that's a real departure, taken deliberately and narrowly. Every resolution route is admin-only — the same guard merge has — and since an admin's own submission already lands the moment they confirm it, no gate is being opened that wasn't already open to this person. Routing a fix back through propose-then-merge would have been ceremony with one possible outcome.
 
 **Backend**
 
-- [ ] Conflict record: the two entry ids, when it was found, and why — the model's one-line reason, shown to whoever has to resolve it
-- [ ] Detection on merge: the newly merged entry against the project's existing entries, in code after the model call — a returned pair whose ids don't resolve is discarded, exactly as citations are
-- [ ] `GET /projects/:id/conflicts`
-- [ ] Resolution endpoints: edit an entry, discard an entry, dismiss the conflict. Admin only, enforced server-side like merge
-- [ ] Dismissal is a decision, not a delete: "these don't actually conflict" has to stick, or the next merge re-detects it and the badge never goes away
-- [ ] Re-check after a resolving edit rather than assuming it worked — an edit that doesn't resolve the contradiction shouldn't clear the flag
-- [ ] Discarding an entry is the one place the IR loses a fact. It needs the same admin-only gate as merge, and the summary cache invalidated with it
-- [ ] Tests: a contradiction is detected on merge, a non-admin can't resolve, dismissal survives the next merge
+- [X] Conflict record: the two entry ids, when it was found, and why — the model's one-line reason, shown to whoever has to resolve it
+- [X] Detection on merge: the newly merged entry against the project's existing entries, in code after the model call — a returned pair whose ids don't resolve is discarded, exactly as citations are
+- [X] `GET /projects/:id/conflicts`
+- [X] Resolution endpoints: edit an entry, discard an entry, dismiss the conflict. Admin only, enforced server-side like merge
+- [X] Dismissal is a decision, not a delete: "these don't actually conflict" has to stick, or the next merge re-detects it and the badge never goes away
+- [X] Re-check after a resolving edit rather than assuming it worked — an edit that doesn't resolve the contradiction shouldn't clear the flag
+- [X] Discarding an entry is the one place the IR loses a fact. It needs the same admin-only gate as merge, and the summary cache invalidated with it
+- [X] Tests: a contradiction is detected on merge, a non-admin can't resolve, dismissal survives the next merge
 
 **Frontend**
 
-- [ ] Red header button, left of pending, absent when there are none — the same shape as the pending queue because it's the same kind of thing, a different colour because it's worse
-- [ ] Both entries shown together with author and time, so "who said what, when" is the first thing visible
-- [ ] Edit, discard, and dismiss per conflict; the editor is the one the other gates use
-- [ ] The conflict stands until it's resolved or dismissed — closing the dialog doesn't clear it
-- [ ] Non-admins see conflicts too. Everyone should know the record currently contradicts itself; only an admin can act on it
+- [X] Red header button, between the digest and pending, absent when there are none — the same shape as the pending queue because it's the same kind of thing, a different colour because it's worse
+- [X] Both entries shown together with author and time, so "who said what, when" is the first thing visible
+- [X] Edit, discard, and dismiss per conflict
+- [X] "Not a conflict" is hidden while a side is being edited. Cancel is already the way out of an edit, and two escape hatches side by side is one too many
+- [X] The conflict stands until it's resolved or dismissed — closing the dialog doesn't clear it
+- [X] Non-admins see conflicts too. Everyone should know the record currently contradicts itself; only an admin can act on it
 
-**Open question worth settling early:** what NL does while a conflict is live. Today re-projection would read both entries and blend them into confident prose, which is the worst possible presentation of a contradiction. Flagging it in the summary is probably right, and it isn't free.
+**Still open:** what NL does while a conflict is live. Re-projection reads both entries and blends them into confident prose, which is the worst possible presentation of a contradiction — the summary reads as though the project has settled something it hasn't. The badge is visible above it, which is not nothing, but the prose itself doesn't know.
+
+**Known limit:** detection compares what just landed against everything else. An entry edited during resolution is only re-checked against its counterpart, not against the rest of the project, so a fix that resolves one contradiction and creates another elsewhere isn't caught until something else merges.
 
 ---
 

@@ -66,6 +66,24 @@ CREATE TABLE IF NOT EXISTS requests (
     source_text TEXT NOT NULL,
     operation   TEXT NOT NULL
 );
+
+-- Two entries in the same project that can't both be true. Not a proposal and
+-- not a fact: a state the record is in until someone settles it.
+--
+-- Dismissed rows are kept rather than deleted. "These don't actually conflict"
+-- is a decision, and without a record of it the next merge re-detects the same
+-- pair and the badge never goes away.
+CREATE TABLE IF NOT EXISTS conflicts (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    entry_a     TEXT NOT NULL REFERENCES entries(id),
+    entry_b     TEXT NOT NULL REFERENCES entries(id),
+    reason      TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    dismissed   INTEGER NOT NULL DEFAULT 0,
+    -- The pair, ordered, so the same two entries can't be recorded twice.
+    UNIQUE(project_id, entry_a, entry_b)
+);
 """
 
 
@@ -435,3 +453,120 @@ def merge_request(request_id: str) -> tuple[str | None, str | None]:
         conn.execute("DELETE FROM requests WHERE id = ?", (request_id,))
 
     return entry_id, None
+
+
+# --- conflicts ---
+#
+# A conflict is between two entries that are both already in the IR. It isn't a
+# proposal, so it never queues; it's a state the project is in until an admin
+# edits one side, discards one, or says the two don't actually contradict.
+
+
+def _conflict_from_row(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "project_id": row["project_id"],
+        "entry_ids": [row["entry_a"], row["entry_b"]],
+        "reason": row["reason"],
+        "created_at": row["created_at"],
+        "dismissed": bool(row["dismissed"]),
+    }
+
+
+def _pair(entry_a: str, entry_b: str) -> tuple[str, str]:
+    """Ordered, so (a, b) and (b, a) are the same pair to the UNIQUE index."""
+    return (entry_a, entry_b) if entry_a <= entry_b else (entry_b, entry_a)
+
+
+def record_conflict(project_id: str, entry_a: str, entry_b: str, reason: str) -> dict | None:
+    """Records a contradiction, or returns None if this pair is already known.
+
+    Already known includes dismissed: someone has ruled on these two, and
+    re-raising it on the next merge would make that ruling meaningless.
+    """
+    first, second = _pair(entry_a, entry_b)
+    conflict = {
+        "id": _new_id(),
+        "project_id": project_id,
+        "entry_ids": [first, second],
+        "reason": reason,
+        "created_at": _now(),
+        "dismissed": False,
+    }
+    with _connect() as conn:
+        existing = conn.execute(
+            "SELECT 1 FROM conflicts WHERE project_id = ? AND entry_a = ? AND entry_b = ?",
+            (project_id, first, second),
+        ).fetchone()
+        if existing is not None:
+            return None
+        conn.execute(
+            "INSERT INTO conflicts (id, project_id, entry_a, entry_b, reason, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (conflict["id"], project_id, first, second, reason, conflict["created_at"]),
+        )
+    return conflict
+
+
+def conflicts_for_project(project_id: str) -> list[dict]:
+    """Open conflicts, oldest first. Dismissed ones stay in the table but are
+    settled, so they aren't anybody's problem any more."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM conflicts WHERE project_id = ? AND dismissed = 0"
+            " ORDER BY created_at",
+            (project_id,),
+        ).fetchall()
+    return [_conflict_from_row(row) for row in rows]
+
+
+def get_conflict(conflict_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM conflicts WHERE id = ?", (conflict_id,)
+        ).fetchone()
+    return _conflict_from_row(row) if row else None
+
+
+def dismiss_conflict(conflict_id: str) -> None:
+    with _connect() as conn:
+        conn.execute("UPDATE conflicts SET dismissed = 1 WHERE id = ?", (conflict_id,))
+
+
+def resolve_conflict(conflict_id: str) -> None:
+    """Gone for good: the contradiction it named no longer exists, so unlike a
+    dismissal there's nothing to remember."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM conflicts WHERE id = ?", (conflict_id,))
+
+
+def update_entry_content(entry_id: str, content: dict) -> dict | None:
+    """Edits an entry already in the IR.
+
+    Authorship doesn't move: the fact is still the proposer's, and an admin
+    fixing a contradiction is not claiming it. `created_at` does move, because
+    the digest and the summary cache both key off it and this is a change.
+    """
+    with _connect() as conn:
+        changed = conn.execute(
+            "UPDATE entries SET content = ?, created_at = ? WHERE id = ?",
+            (json.dumps(content), _now(), entry_id),
+        ).rowcount
+    return get_entry(entry_id) if changed else None
+
+
+def remove_entry(project_id: str, entry_id: str) -> None:
+    """Drops a fact from a project, and with it any conflict that named it.
+
+    The only place the IR loses a fact — the entry row itself is left alone, so
+    nothing else that referenced it breaks.
+    """
+    with _connect() as conn:
+        conn.execute(
+            "DELETE FROM project_entries WHERE project_id = ? AND entry_id = ?",
+            (project_id, entry_id),
+        )
+        conn.execute(
+            "DELETE FROM conflicts WHERE project_id = ? AND (entry_a = ? OR entry_b = ?)",
+            (project_id, entry_id, entry_id),
+        )

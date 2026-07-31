@@ -120,3 +120,15 @@ export interface DocumentResult {
    * nobody assumes the document was read in full when part of it wasn't. */
   failed_passages: number
 }
+
+// Two entries in the same project that can't both be true. Not a proposal and
+// not a fact — a state the record is in until an admin settles it.
+export interface Conflict {
+  id: string
+  project_id: string
+  /** Always two, and both are already in the IR. */
+  entry_ids: string[]
+  /** One line on what can't hold at once, for whoever has to settle it. */
+  reason: string
+  created_at: string
+}

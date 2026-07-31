@@ -13,6 +13,10 @@ const buttonVariants = cva(
           "bg-brand text-brand-foreground shadow-sm shadow-brand/25 hover:bg-brand/90 focus-visible:border-brand focus-visible:ring-brand/30",
         attention:
           "border-attention/30 bg-attention-subtle text-attention hover:bg-attention/15 focus-visible:border-attention/40 focus-visible:ring-attention/25",
+        // Same shape as attention, one step louder: this isn't waiting on
+        // someone, it's wrong right now.
+        alarm:
+          "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/50 focus-visible:ring-destructive/25",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

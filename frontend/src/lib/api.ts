@@ -1,5 +1,6 @@
 import type {
   ChangeRequest,
+  Conflict,
   DocumentResult,
   IREntry,
   InputResult,
@@ -146,4 +147,29 @@ export const api = {
 
   rejectRequest: (id: string, requestId: string) =>
     request<void>(`/projects/${id}/requests/${requestId}/reject`, { method: 'POST' }),
+
+  // Conflicts. Everyone can see them; only an admin can settle one.
+  listConflicts: (id: string) => request<Conflict[]>(`/projects/${id}/conflicts`),
+
+  editConflictingEntry: (
+    id: string,
+    conflictId: string,
+    entryId: string,
+    content: Record<string, unknown>,
+  ) =>
+    request<{ resolved: boolean }>(
+      `/projects/${id}/conflicts/${conflictId}/entries/${entryId}`,
+      { method: 'PUT', body: JSON.stringify({ content }) },
+    ),
+
+  discardConflictingEntry: (id: string, conflictId: string, entryId: string) =>
+    request<{ resolved: boolean }>(
+      `/projects/${id}/conflicts/${conflictId}/discard/${entryId}`,
+      { method: 'POST' },
+    ),
+
+  dismissConflict: (id: string, conflictId: string) =>
+    request<void>(`/projects/${id}/conflicts/${conflictId}/dismiss`, {
+      method: 'POST',
+    }),
 }

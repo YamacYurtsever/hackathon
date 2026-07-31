@@ -7,6 +7,7 @@ import io
 
 import pytest
 
+from ai import conflicts as conflict_detection
 from ai import mistral
 from ai.documents import read_document
 from ai.documents.chunk import split_passages
@@ -430,6 +431,13 @@ def test_upload_requires_login(client):
 
 
 # --- provenance survives into the review queue ---
+
+
+@pytest.fixture(autouse=True)
+def no_conflict_calls(monkeypatch):
+    """Merging now looks for contradictions, which is another model call. These
+    tests are about reading documents, not about that."""
+    monkeypatch.setattr(conflict_detection, "find_conflicts", lambda *a, **k: [])
 
 
 @pytest.fixture

@@ -11,6 +11,7 @@ import os
 
 from flask import Blueprint, jsonify, request
 
+from ai import conflicts as conflict_detection
 from ai import reprojection
 from ai.documents import DocumentError, read_document
 from ai.interpret import interpret_message
@@ -19,6 +20,24 @@ from data import store
 from .auth import current_profile, login_required
 
 bp = Blueprint("pipeline", __name__)
+
+
+def _check_for_conflicts(project_id: str, landed_ids: list[str]) -> None:
+    """Looks for contradictions between what just landed and what was there.
+
+    Called wherever the IR changes, which is the only moment it can start
+    contradicting itself. Best-effort by design: a conflict we miss is found on
+    the next merge, and a detector that fails should never fail a merge.
+    """
+    if not landed_ids:
+        return
+
+    entries = store.entries_for_project(project_id)
+    landed = [entry for entry in entries if entry["id"] in set(landed_ids)]
+    existing = [entry for entry in entries if entry["id"] not in set(landed_ids)]
+
+    for pair in conflict_detection.find_conflicts(landed, existing):
+        store.record_conflict(project_id, pair["a"], pair["b"], pair["reason"])
 
 
 def _member_project(project_id: str) -> tuple[dict | None, tuple]:
@@ -223,6 +242,7 @@ def submit_requests(project_id: str):
             )
         if merged:
             reprojection.invalidate_project(project_id)
+            _check_for_conflicts(project_id, merged)
         return jsonify({"requests": still_pending, "merged": merged}), 201
 
     return jsonify({"requests": created, "merged": []}), 201
@@ -286,6 +306,7 @@ def merge_request(project_id: str, request_id: str):
 
     # Entries changed, so every cached summary of this project is stale.
     reprojection.invalidate_project(project_id)
+    _check_for_conflicts(project_id, [entry_id])
     return jsonify({"merged": entry_id})
 
 
@@ -304,4 +325,107 @@ def reject_request(project_id: str, request_id: str):
         return jsonify({"error": "request not found"}), 404
 
     store.delete_request(request_id)
+    return "", 204
+
+
+# --- conflicts ---
+#
+# Resolution edits or drops an entry that is already in the IR, which is a
+# second way to write to it. That's a real departure from "merging is the only
+# write", taken deliberately and narrowly: every route here is admin-only, the
+# same guard merge has, and an admin's own change already lands the moment they
+# confirm it. No gate is being opened that wasn't already open to this person.
+
+
+def _conflict_for_admin(project_id: str, conflict_id: str) -> tuple[dict | None, tuple]:
+    project, error = _member_project(project_id)
+    if project is None:
+        return None, error
+    if current_profile()["id"] not in project["admins"]:
+        return None, (jsonify({"error": "only admins can resolve conflicts"}), 403)
+
+    conflict = store.get_conflict(conflict_id)
+    if conflict is None or conflict["project_id"] != project_id:
+        return None, (jsonify({"error": "conflict not found"}), 404)
+    return conflict, ()
+
+
+def _settle_if_resolved(project_id: str, conflict: dict) -> bool:
+    """Re-reads the two entries and drops the conflict only if it's really gone.
+
+    An edit that doesn't resolve the contradiction shouldn't clear the flag —
+    otherwise "resolving" a conflict is just closing the dialog.
+    """
+    entries = {entry["id"]: entry for entry in store.entries_for_project(project_id)}
+    sides = [entries.get(entry_id) for entry_id in conflict["entry_ids"]]
+    if any(side is None for side in sides):
+        store.resolve_conflict(conflict["id"])
+        return True
+
+    still = conflict_detection.find_conflicts(sides[:1], sides[1:])
+    if not still:
+        store.resolve_conflict(conflict["id"])
+        return True
+    return False
+
+
+@bp.get("/api/projects/<project_id>/conflicts")
+@login_required
+def list_conflicts(project_id: str):
+    """Visible to every member. Everyone should know the record currently
+    contradicts itself; only an admin can do anything about it."""
+    project, error = _member_project(project_id)
+    if project is None:
+        return error
+    return jsonify(store.conflicts_for_project(project_id))
+
+
+@bp.put("/api/projects/<project_id>/conflicts/<conflict_id>/entries/<entry_id>")
+@login_required
+def edit_conflicting_entry(project_id: str, conflict_id: str, entry_id: str):
+    """Correct one side. The fact stays its author's — an admin settling a
+    contradiction isn't claiming it."""
+    conflict, error = _conflict_for_admin(project_id, conflict_id)
+    if conflict is None:
+        return error
+    if entry_id not in conflict["entry_ids"]:
+        return jsonify({"error": "that entry isn't part of this conflict"}), 400
+
+    content = (request.get_json(silent=True) or {}).get("content")
+    if not isinstance(content, dict) or not str(content.get("statement", "")).strip():
+        return jsonify({"error": "content needs a statement"}), 400
+
+    if store.update_entry_content(entry_id, content) is None:
+        return jsonify({"error": "entry not found"}), 404
+
+    reprojection.invalidate_project(project_id)
+    return jsonify({"resolved": _settle_if_resolved(project_id, conflict)})
+
+
+@bp.post("/api/projects/<project_id>/conflicts/<conflict_id>/discard/<entry_id>")
+@login_required
+def discard_conflicting_entry(project_id: str, conflict_id: str, entry_id: str):
+    """Drop one side entirely. The only place the IR loses a fact, which is why
+    it needs the same admin gate merging does."""
+    conflict, error = _conflict_for_admin(project_id, conflict_id)
+    if conflict is None:
+        return error
+    if entry_id not in conflict["entry_ids"]:
+        return jsonify({"error": "that entry isn't part of this conflict"}), 400
+
+    store.remove_entry(project_id, entry_id)
+    reprojection.invalidate_project(project_id)
+    return jsonify({"resolved": True})
+
+
+@bp.post("/api/projects/<project_id>/conflicts/<conflict_id>/dismiss")
+@login_required
+def dismiss_conflict(project_id: str, conflict_id: str):
+    """"These don't actually contradict." Kept rather than deleted, so the next
+    merge doesn't raise the same pair and make the ruling meaningless."""
+    conflict, error = _conflict_for_admin(project_id, conflict_id)
+    if conflict is None:
+        return error
+
+    store.dismiss_conflict(conflict_id)
     return "", 204

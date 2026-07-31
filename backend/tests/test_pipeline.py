@@ -30,7 +30,7 @@ def project(client, signed_up):
 @pytest.fixture
 def stub_model(monkeypatch):
     """Replaces every model call with something deterministic."""
-    calls = {"read": 0, "summarize": 0, "welcome": 0, "answer": 0}
+    calls = {"read": 0, "summarize": 0, "welcome": 0, "answer": 0, "conflicts": 0}
 
     def fake_read(text, profile=None, existing=None, model=None):
         calls["read"] += 1
@@ -59,10 +59,17 @@ def stub_model(monkeypatch):
         calls["welcome"] += 1
         return {"text": "A welcome."}
 
+    def fake_conflicts(landed, existing, model=None):
+        calls["conflicts"] += 1
+        return []
+
     monkeypatch.setattr(pipeline, "interpret_message", fake_read)
     monkeypatch.setattr(pipeline.reprojection, "summarize", fake_summarize)
     monkeypatch.setattr(pipeline.reprojection, "answer", fake_answer)
     monkeypatch.setattr(pipeline.reprojection, "welcome", fake_welcome)
+    monkeypatch.setattr(
+        pipeline.conflict_detection, "find_conflicts", fake_conflicts
+    )
     reprojection._cache.clear()
     reprojection._welcome_cache.clear()
     return calls
