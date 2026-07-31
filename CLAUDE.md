@@ -44,6 +44,9 @@ Keep these three layers distinct in the schema even if the UI blends them:
 - [ ] Context profile per user (role, self-described expertise, past project blurbs)
 - [ ] Cross-role effect propagation (the ripple-effect wow moment)
 - [ ] Grounding: every re-projected claim references its source IR field
+- [ ] NL/IR toggle: single click switches a view between natural-language summary and raw IR (or IR diff, for amendments) — applies to both project summaries and amendment review
+- [ ] "Since you last viewed" summary: client stores last-viewed timestamp per project locally, requests changes since then, displays a digest of what changed on project open
+- [ ] Every IR addition/change stored with a timestamp (and ideally author) server-side — required for both version history and the "since last viewed" digest to work
 
 **Should-have if time allows:**
 - [ ] Meaning-preservation check — second AI pass compares re-projected output back against the IR to confirm it didn't drift or invent claims
@@ -87,18 +90,20 @@ Keep these three layers distinct in the schema even if the UI blends them:
 - [ ] NL → IR extraction working via Mistral (single message in, IR object out)
 - [ ] IR → role-specific re-projection working (IR in, role-flavored text out)
 - [ ] Context profile actually influences re-projection output (not just role — history/expertise too)
-- [ ] Basic Flask endpoints: create project, post message, fetch re-projected view per user
+- [ ] Basic Flask endpoints: create project, post message, fetch re-projected view per user, fetch changes-since-timestamp
 
 ### 3. Wow-Factor Feature
 - [ ] Cross-role effect propagation: one IR update triggers relevant flags for other roles
 - [ ] Grounding citations visible in UI (which IR field produced this claim)
 - [ ] Frontend: project feed + per-role personalized view rendering correctly
+- [ ] NL/IR toggle on project summary view (flip between re-projected text and raw IR)
+- [ ] "Since you last viewed" digest: local last-viewed timestamp per project, fetch + display re-projected summary of changes since then, on project open
 
 ### 4. Depth Features (pick based on remaining time)
 - [ ] Meaning-preservation check pass
-- [ ] Amendment proposal + admin approval flow
+- [ ] Amendment proposal + admin approval flow, with NL/IR toggle showing the change as plain-language diff or raw IR diff
 - [ ] Version history view
-- [ ] Attribution (who said what, when)
+- [ ] Attribution UI (surface who said what, when — the underlying data is already stored per the must-have above)
 
 ### 5. Integration + Polish
 - [ ] Atlassian API integration pulling at least one real data point into IR
