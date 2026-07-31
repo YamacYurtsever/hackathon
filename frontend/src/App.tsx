@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import {
   BookOpen,
   Braces,
@@ -9,6 +8,7 @@ import {
   Copy,
   Database,
   FileText,
+  GitBranch,
   Hash,
   LoaderCircle,
   Menu,
@@ -32,13 +32,22 @@ import {
   useRef,
   useState,
 } from 'react'
-
+import { AuthProvider } from '@/components/auth-provider'
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/lib/auth-context'
+import { LoginPage } from '@/pages/login'
+import { ProfilePage } from '@/pages/profile'
+import { SignupPage } from '@/pages/signup'
 
 type Source = {
-  kind?: 'document' | 'message'
-  page: number | null
+  kind?: 'document' | 'message' | 'issue'
+  page?: number | null
   quote: string
+  document_id?: string
+  filename?: string
+  issue_id?: string
+  proposal_id?: string
+  version?: number
 }
 
 type EntryContent = {
@@ -59,11 +68,13 @@ type IREntry = {
 
 type DocumentInfo = {
   id: string
+  project_id?: string
   filename: string
   mime_type: string
   size_bytes: number
   page_count: number
   created_at: string
+  author?: string
   models: {
     ocr: string
     ir: string
@@ -75,6 +86,7 @@ type ProjectSummary = {
   name: string
   entry_count: number
   member_count: number
+  document_count: number
   created_at: string
   document: DocumentInfo | null
 }
@@ -84,16 +96,20 @@ type ProjectBundle = {
     id: string
     name: string
     ir: string[]
+    documents: string[]
     users: string[]
     admins: string[]
     created_at: string
   }
   document: DocumentInfo | null
+  documents: DocumentInfo[]
   entries: IREntry[]
+  members: Profile[]
 }
 
 type Profile = {
   id: string
+  username?: string
   content: {
     name?: string
     discipline?: string
@@ -101,6 +117,7 @@ type Profile = {
     history?: string
     preferences?: string
     context?: string
+    description?: string
     system?: boolean
     [key: string]: unknown
   }
@@ -126,6 +143,8 @@ type Citation = {
   entry_id: string
   statement: string
   page: number | null
+  filename?: string
+  document_id?: string
   quote: string
 }
 
@@ -137,13 +156,65 @@ type ChatMessage = {
   insufficient?: boolean
 }
 
-type ViewMode = 'lens' | 'ir' | 'raw'
+type ProposalVersion = {
+  version: number
+  solution: string
+  author: string
+  created_at: string
+}
+
+type ProposalReview = {
+  reviewer: string
+  decision: 'approved' | 'rejected'
+  comment: string
+  version: number
+  created_at: string
+}
+
+type IssueProposal = {
+  id: string
+  status: 'draft' | 'in_review' | 'approved' | 'rejected'
+  contributors: string[]
+  created_at: string
+  versions: ProposalVersion[]
+  reviews: ProposalReview[]
+}
+
+type ProjectIssue = {
+  id: string
+  project_id: string
+  title: string
+  summary: string
+  required_expertise: string
+  reviewer_ids: string[]
+  status: 'open' | 'resolved'
+  created_by: string
+  created_at: string
+  approved_proposal_id?: string
+  resolution_entry_id?: string
+  proposals: IssueProposal[]
+}
+
+type FeedGroup = {
+  id: string
+  kind: 'document' | 'message' | 'issue'
+  title: string
+  summary: string
+  author: string
+  created_at: string
+  entries: IREntry[]
+}
+
+type ViewMode = 'lens' | 'ir' | 'issues' | 'raw'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 const ACCEPTED_FILES = '.pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.avif'
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, init)
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+    ...init,
+  })
   const payload = (await response.json().catch(() => ({}))) as {
     error?: string
   }
@@ -169,17 +240,60 @@ function shortId(value: string) {
   return value.replace(/^ir_/, 'IR-').slice(0, 11).toUpperCase()
 }
 
-function App() {
+function buildFeedGroups(entries: IREntry[]): FeedGroup[] {
+  const groups = new Map<string, FeedGroup>()
+  for (const entry of entries) {
+    const source = entry.content.source
+    const kind = source?.kind ?? 'message'
+    const id =
+      kind === 'document'
+        ? `document:${source?.document_id ?? source?.filename ?? entry.id}`
+        : kind === 'issue'
+          ? `issue:${source?.issue_id ?? entry.id}`
+          : `message:${entry.author}:${entry.created_at}`
+    const statement =
+      entry.content.statement ?? 'A grounded project update was added.'
+    const existing = groups.get(id)
+    if (existing) {
+      existing.entries.push(entry)
+      continue
+    }
+    const issueName = entry.content.entities?.[0]
+    groups.set(id, {
+      id,
+      kind,
+      title:
+        kind === 'document'
+          ? `${source?.filename ?? 'Document'} added`
+          : kind === 'issue'
+            ? `Approved solution${issueName ? ` · ${issueName}` : ''}`
+            : 'Project update',
+      summary:
+        statement.length > 180 ? `${statement.slice(0, 177)}…` : statement,
+      author: entry.author,
+      created_at: entry.created_at,
+      entries: [entry],
+    })
+  }
+  return Array.from(groups.values()).reverse()
+}
+
+function WorkspacePage() {
+  const { profile: actingProfile, setProfile: setActingProfile } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [bundle, setBundle] = useState<ProjectBundle | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [selectedProfileId, setSelectedProfileId] = useState(
+    actingProfile?.id ?? '',
+  )
   const [claims, setClaims] = useState<Claim[]>([])
+  const [issues, setIssues] = useState<ProjectIssue[]>([])
   const [changes, setChanges] = useState<IREntry[]>([])
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
+  const [expandedFeedId, setExpandedFeedId] = useState<string | null>(null)
   const [loadingLibrary, setLoadingLibrary] = useState(true)
   const [loadingProject, setLoadingProject] = useState(false)
   const [loadingView, setLoadingView] = useState(false)
@@ -196,10 +310,22 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [showProjectModal, setShowProjectModal] = useState(false)
-  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showJoinModal, setShowJoinModal] = useState(false)
+  const [showMembersModal, setShowMembersModal] = useState(false)
+  const [showIssueModal, setShowIssueModal] = useState(false)
   const [projectName, setProjectName] = useState('')
-  const [profileName, setProfileName] = useState('')
-  const [profileContext, setProfileContext] = useState('')
+  const [joinProjectId, setJoinProjectId] = useState('')
+  const [memberToAdd, setMemberToAdd] = useState('')
+  const [issueTitle, setIssueTitle] = useState('')
+  const [issueSummary, setIssueSummary] = useState('')
+  const [issueExpertise, setIssueExpertise] = useState('')
+  const [issueReviewerId, setIssueReviewerId] = useState('')
+  const [solutionTarget, setSolutionTarget] = useState<{
+    issueId: string
+    proposalId?: string
+    baseVersion?: number
+  } | null>(null)
+  const [solutionText, setSolutionText] = useState('')
   const [savingModal, setSavingModal] = useState(false)
 
   useEffect(() => {
@@ -213,14 +339,7 @@ function App() {
         setProjects(library.projects)
         setProfiles(profileList.profiles)
         setMistralConfigured(health.mistral_configured)
-        const firstHumanProfile = profileList.profiles.find(
-          (profile) => !profile.content.system,
-        )
-        if (firstHumanProfile) setSelectedProfileId(firstHumanProfile.id)
-        const medGuard =
-          library.projects.find((project) => project.id === 'prj_medguard') ??
-          library.projects[0]
-        if (medGuard) setSelectedId(medGuard.id)
+        setSelectedProfileId(actingProfile?.id ?? '')
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Could not load projects.')
       } finally {
@@ -228,7 +347,7 @@ function App() {
       }
     }
     void initialise()
-  }, [])
+  }, [actingProfile?.id])
 
   useEffect(() => {
     if (!selectedId) {
@@ -241,8 +360,14 @@ function App() {
       setClaims([])
       setChanges([])
       try {
-        const result = await apiRequest<ProjectBundle>(`/api/projects/${selectedId}`)
+        const [result, issueResult] = await Promise.all([
+          apiRequest<ProjectBundle>(`/api/projects/${selectedId}`),
+          apiRequest<{ issues: ProjectIssue[] }>(
+            `/api/projects/${selectedId}/issues`,
+          ),
+        ])
         setBundle(result)
+        setIssues(issueResult.issues)
         setMessages([])
         const viewerId = result.project.users.includes(selectedProfileId)
           ? selectedProfileId
@@ -259,6 +384,7 @@ function App() {
         }
         localStorage.setItem(storageKey, new Date().toISOString())
       } catch (caught) {
+        setIssues([])
         setError(caught instanceof Error ? caught.message : 'Could not load that project.')
       } finally {
         setLoadingProject(false)
@@ -298,8 +424,14 @@ function App() {
   }, [messages, asking])
 
   const profileById = useMemo(
-    () => new Map(profiles.map((profile) => [profile.id, profile])),
-    [profiles],
+    () =>
+      new Map(
+        [...profiles, ...(bundle?.members ?? [])].map((profile) => [
+          profile.id,
+          profile,
+        ]),
+      ),
+    [bundle?.members, profiles],
   )
   const projectProfiles = useMemo(
     () =>
@@ -308,53 +440,213 @@ function App() {
         .filter((profile): profile is Profile => Boolean(profile)),
     [bundle, profileById],
   )
-  const selectedProfile = profileById.get(selectedProfileId)
-  const categories = useMemo(
+  const availableProfiles = useMemo(
     () =>
-      Array.from(
-        new Set(
-          (bundle?.entries ?? [])
-            .map((entry) => entry.content.category)
-            .filter(Boolean),
-        ),
+      profiles.filter(
+        (profile) =>
+          !profile.content.system &&
+          !(bundle?.project.users ?? []).includes(profile.id),
       ),
-    [bundle],
+    [bundle?.project.users, profiles],
+  )
+  const selectedProfile = profileById.get(selectedProfileId)
+  const feedGroups = useMemo(
+    () => buildFeedGroups(bundle?.entries ?? []),
+    [bundle?.entries],
+  )
+  const reviewerCandidates = projectProfiles.filter(
+    (profile) => profile.id !== actingProfile?.id,
+  )
+  const documentPages = (bundle?.documents ?? []).reduce(
+    (total, document) => total + document.page_count,
+    0,
+  )
+  const documentBytes = (bundle?.documents ?? []).reduce(
+    (total, document) => total + document.size_bytes,
+    0,
   )
 
   const profileNameFor = (id?: string) =>
-    (id && profileById.get(id)?.content.name) || id || 'Unknown'
+    (id &&
+      (profileById.get(id)?.content.name ||
+        profileById.get(id)?.username)) ||
+    id ||
+    'Unknown'
 
   const refreshProject = async (projectId: string) => {
     const result = await apiRequest<ProjectBundle>(`/api/projects/${projectId}`)
     setBundle(result)
-    setProjects((current) =>
-      current.map((project) =>
-        project.id === projectId
-          ? { ...project, entry_count: result.entries.length }
-          : project,
-      ),
-    )
-    return result
-  }
-
-  const uploadFile = async (file?: File) => {
-    if (!file) return
-    setUploading(true)
-    setError(null)
-    setSidebarOpen(false)
-    const formData = new FormData()
-    formData.append('file', file)
-    if (selectedProfileId) formData.append('author_id', selectedProfileId)
-    try {
-      const result = await apiRequest<ProjectBundle>('/api/documents', {
-        method: 'POST',
-        body: formData,
-      })
+    setProjects((current) => {
       const summary: ProjectSummary = {
         id: result.project.id,
         name: result.project.name,
         entry_count: result.entries.length,
         member_count: result.project.users.length,
+        document_count: result.documents.length,
+        created_at: result.project.created_at,
+        document: result.document,
+      }
+      return current.some((project) => project.id === projectId)
+        ? current.map((project) =>
+            project.id === projectId ? summary : project,
+          )
+        : [summary, ...current]
+    })
+    return result
+  }
+
+  const updateIssue = (issue: ProjectIssue) => {
+    setIssues((current) =>
+      current.some((item) => item.id === issue.id)
+        ? current.map((item) => (item.id === issue.id ? issue : item))
+        : [issue, ...current],
+    )
+  }
+
+  const createIssue = async (event: FormEvent) => {
+    event.preventDefault()
+    if (
+      !bundle ||
+      !issueTitle.trim() ||
+      !issueSummary.trim() ||
+      !issueExpertise.trim() ||
+      !issueReviewerId
+    ) {
+      return
+    }
+    setSavingModal(true)
+    setError(null)
+    try {
+      const issue = await apiRequest<ProjectIssue>(
+        `/api/projects/${bundle.project.id}/issues`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: issueTitle.trim(),
+            summary: issueSummary.trim(),
+            required_expertise: issueExpertise.trim(),
+            reviewer_ids: [issueReviewerId],
+          }),
+        },
+      )
+      updateIssue(issue)
+      setIssueTitle('')
+      setIssueSummary('')
+      setIssueExpertise('')
+      setIssueReviewerId('')
+      setShowIssueModal(false)
+      setMode('issues')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not create issue.')
+    } finally {
+      setSavingModal(false)
+    }
+  }
+
+  const saveSolution = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!bundle || !solutionTarget || !solutionText.trim()) return
+    setSavingModal(true)
+    setError(null)
+    try {
+      const base = `/api/projects/${bundle.project.id}/issues/${solutionTarget.issueId}`
+      const path = solutionTarget.proposalId
+        ? `${base}/proposals/${solutionTarget.proposalId}/revisions`
+        : `${base}/proposals`
+      const issue = await apiRequest<ProjectIssue>(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          solution: solutionText.trim(),
+          ...(solutionTarget.baseVersion
+            ? { base_version: solutionTarget.baseVersion }
+            : {}),
+        }),
+      })
+      updateIssue(issue)
+      setSolutionText('')
+      setSolutionTarget(null)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not save solution.')
+    } finally {
+      setSavingModal(false)
+    }
+  }
+
+  const submitProposal = async (issueId: string, proposalId: string) => {
+    if (!bundle) return
+    setError(null)
+    try {
+      const issue = await apiRequest<ProjectIssue>(
+        `/api/projects/${bundle.project.id}/issues/${issueId}/proposals/${proposalId}/submit`,
+        { method: 'POST' },
+      )
+      updateIssue(issue)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not submit proposal.')
+    }
+  }
+
+  const reviewProposal = async (
+    issueId: string,
+    proposalId: string,
+    decision: 'approved' | 'rejected',
+  ) => {
+    if (!bundle) return
+    const comment = window.prompt(
+      decision === 'approved'
+        ? 'Approval note (optional)'
+        : 'What should the contributors change?',
+      '',
+    )
+    if (comment === null) return
+    setError(null)
+    try {
+      const issue = await apiRequest<ProjectIssue>(
+        `/api/projects/${bundle.project.id}/issues/${issueId}/proposals/${proposalId}/review`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision, comment }),
+        },
+      )
+      updateIssue(issue)
+      if (decision === 'approved') {
+        await refreshProject(bundle.project.id)
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not review proposal.')
+    }
+  }
+
+  const uploadFiles = async (files: File[]) => {
+    if (!files.length) return
+    setUploading(true)
+    setError(null)
+    setSidebarOpen(false)
+    let projectId = bundle?.project.id
+    try {
+      let result: ProjectBundle | null = null
+      for (const file of files) {
+        const formData = new FormData()
+        formData.append('file', file)
+        const path = projectId
+          ? `/api/projects/${projectId}/documents`
+          : '/api/documents'
+        result = await apiRequest<ProjectBundle>(path, {
+          method: 'POST',
+          body: formData,
+        })
+        projectId = result.project.id
+      }
+      if (!result) return
+      const summary: ProjectSummary = {
+        id: result.project.id,
+        name: result.project.name,
+        entry_count: result.entries.length,
+        member_count: result.project.users.length,
+        document_count: result.documents.length,
         created_at: result.project.created_at,
         document: result.document,
       }
@@ -365,8 +657,17 @@ function App() {
       setBundle(result)
       setSelectedId(result.project.id)
       setMessages([])
+      setMode('ir')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The upload failed.')
+      if (projectId) {
+        try {
+          await refreshProject(projectId)
+          setSelectedId(projectId)
+        } catch {
+          // Preserve the original upload error; a later reload will reconcile.
+        }
+      }
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -375,7 +676,7 @@ function App() {
 
   const postUpdate = async (event: FormEvent) => {
     event.preventDefault()
-    if (!bundle || !selectedProfileId || !updateText.trim() || posting) return
+    if (!bundle || !actingProfile || !updateText.trim() || posting) return
     setPosting(true)
     setError(null)
     try {
@@ -386,7 +687,6 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             text: updateText.trim(),
-            author_id: selectedProfileId,
           }),
         },
       )
@@ -402,7 +702,7 @@ function App() {
 
   const createProject = async (event: FormEvent) => {
     event.preventDefault()
-    if (!projectName.trim() || !selectedProfileId) return
+    if (!projectName.trim()) return
     setSavingModal(true)
     try {
       const project = await apiRequest<ProjectBundle['project']>('/api/projects', {
@@ -410,7 +710,6 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: projectName.trim(),
-          creator_id: selectedProfileId,
         }),
       })
       const summary: ProjectSummary = {
@@ -418,6 +717,7 @@ function App() {
         name: project.name,
         entry_count: 0,
         member_count: 1,
+        document_count: 0,
         created_at: project.created_at,
         document: null,
       }
@@ -432,31 +732,129 @@ function App() {
     }
   }
 
-  const createProfile = async (event: FormEvent) => {
+  const joinProject = async (event: FormEvent) => {
     event.preventDefault()
-    if (!profileName.trim() || !profileContext.trim()) return
+    const projectId = joinProjectId.trim()
+    if (!projectId) return
     setSavingModal(true)
+    setError(null)
     try {
-      const profile = await apiRequest<Profile>('/api/profiles', {
+      const result = await apiRequest<ProjectBundle>(
+        `/api/projects/${encodeURIComponent(projectId)}/join`,
+        {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: {
-            name: profileName.trim(),
-            context: profileContext.trim(),
-          },
-        }),
-      })
-      setProfiles((current) => [...current, profile])
-      if (!bundle) setSelectedProfileId(profile.id)
-      setProfileName('')
-      setProfileContext('')
-      setShowProfileModal(false)
+        },
+      )
+      const summary: ProjectSummary = {
+        id: result.project.id,
+        name: result.project.name,
+        entry_count: result.entries.length,
+        member_count: result.project.users.length,
+        document_count: result.documents.length,
+        created_at: result.project.created_at,
+        document: result.document,
+      }
+      setProjects((current) => [
+        summary,
+        ...current.filter((project) => project.id !== summary.id),
+      ])
+      setJoinProjectId('')
+      setShowJoinModal(false)
+      setSelectedId(result.project.id)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not create profile.')
+      setError(caught instanceof Error ? caught.message : 'Could not join project.')
     } finally {
       setSavingModal(false)
     }
+  }
+
+  const promoteMember = async (userId: string) => {
+    if (!bundle) return
+    setError(null)
+    try {
+      await apiRequest(`/api/projects/${bundle.project.id}/promote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId }),
+      })
+      await refreshProject(bundle.project.id)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not promote member.')
+    }
+  }
+
+  const addMember = async () => {
+    if (!bundle || !memberToAdd) return
+    setError(null)
+    try {
+      const result = await apiRequest<ProjectBundle>(
+        `/api/projects/${bundle.project.id}/members`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: memberToAdd }),
+        },
+      )
+      setBundle(result)
+      setMemberToAdd('')
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === result.project.id
+            ? { ...project, member_count: result.project.users.length }
+            : project,
+        ),
+      )
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not add member.')
+    }
+  }
+
+  const removeMember = async (userId: string) => {
+    if (!bundle) return
+    setError(null)
+    try {
+      const result = await apiRequest<ProjectBundle>(
+        `/api/projects/${bundle.project.id}/members/${userId}`,
+        { method: 'DELETE' },
+      )
+      setBundle(result)
+      if (!result.project.users.includes(selectedProfileId)) {
+        setSelectedProfileId(actingProfile?.id ?? result.project.users[0] ?? '')
+      }
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === result.project.id
+            ? { ...project, member_count: result.project.users.length }
+            : project,
+        ),
+      )
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not remove member.')
+    }
+  }
+
+  const exitProject = async () => {
+    if (!bundle) return
+    setError(null)
+    try {
+      await apiRequest(`/api/projects/${bundle.project.id}/exit`, {
+        method: 'POST',
+      })
+      setProjects((current) =>
+        current.filter((project) => project.id !== bundle.project.id),
+      )
+      setBundle(null)
+      setSelectedId(null)
+      setShowMembersModal(false)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not exit project.')
+    }
+  }
+
+  const handleLogout = async () => {
+    await apiRequest('/api/logout', { method: 'POST' })
+    setActingProfile(null)
+    window.location.assign('/login')
   }
 
   const askQuestion = async (event?: FormEvent, suggestion?: string) => {
@@ -511,13 +909,13 @@ function App() {
   }
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    void uploadFile(event.target.files?.[0])
+    void uploadFiles(Array.from(event.target.files ?? []))
   }
 
   const onDrop = (event: DragEvent<HTMLElement>) => {
     event.preventDefault()
     setDragging(false)
-    void uploadFile(event.dataTransfer.files[0])
+    void uploadFiles(Array.from(event.dataTransfer.files))
   }
 
   const copyProjectId = async () => {
@@ -590,23 +988,34 @@ function App() {
             ref={fileInputRef}
             type="file"
             accept={ACCEPTED_FILES}
+            multiple
             hidden
             onChange={onFileChange}
           />
           <div className="sidebar-actions">
             <button
               className="new-project-button"
-              onClick={() =>
-                profiles.length ? setShowProjectModal(true) : setShowProfileModal(true)
-              }
+              onClick={() => setShowProjectModal(true)}
             >
               <Plus />
               New project
             </button>
             <button
               className="icon-upload-button"
-              aria-label="Import document"
-              title="Import a document"
+              aria-label="Join a project"
+              title="Join a project"
+              onClick={() => setShowJoinModal(true)}
+            >
+              <Users />
+            </button>
+            <button
+              className="icon-upload-button"
+              aria-label="Add documents"
+              title={
+                bundle
+                  ? `Add documents to ${bundle.project.name}`
+                  : 'Create a project from documents'
+              }
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading || !mistralConfigured}
             >
@@ -635,7 +1044,9 @@ function App() {
                   <span className="document-copy">
                     <strong>{project.name}</strong>
                     <small>
-                      {project.entry_count} entries · {project.member_count} members
+                      {project.entry_count} entries · {project.document_count}{' '}
+                      {project.document_count === 1 ? 'file' : 'files'} ·{' '}
+                      {project.member_count} members
                     </small>
                   </span>
                   <ChevronRight className="document-arrow" />
@@ -644,15 +1055,21 @@ function App() {
             )}
           </div>
 
-          <button className="profile-card" onClick={() => setShowProfileModal(true)}>
+          <button
+            className="profile-card"
+            onClick={() => window.location.assign('/profile')}
+          >
             <span>
               <UserRound />
             </span>
             <div>
-              <small>Working as</small>
-              <strong>{selectedProfile?.content.name ?? 'Create a profile'}</strong>
+              <small>Signed in as</small>
+              <strong>{profileNameFor(actingProfile?.id)}</strong>
             </div>
-            <Plus />
+            <ChevronRight />
+          </button>
+          <button className="sidebar-logout" onClick={() => void handleLogout()}>
+            Log out
           </button>
 
           <div className="sidebar-note">
@@ -687,8 +1104,11 @@ function App() {
           {dragging && (
             <div className="drop-overlay">
               <UploadCloud />
-              <strong>Drop to generate the IR</strong>
-              <span>Mistral will read, structure, and ground the document</span>
+              <strong>Drop files to update the IR</strong>
+              <span>
+                Mistral will add every grounded fact to{' '}
+                {bundle?.project.name ?? 'one new project'}
+              </span>
             </div>
           )}
           {error && (
@@ -710,11 +1130,15 @@ function App() {
               <div className="project-head">
                 <div className="project-title-row">
                   <div className="project-file-icon">
-                    {bundle.document ? <FileText /> : <Users />}
+                    {bundle.documents.length ? <FileText /> : <Users />}
                   </div>
                   <div>
                     <div className="project-kicker">
-                      <span>{bundle.document ? 'Imported project' : 'Shared project'}</span>
+                      <span>
+                        {bundle.documents.length
+                          ? 'Document-backed project'
+                          : 'Shared project'}
+                      </span>
                       <span className="verified-pill">
                         <ShieldCheck /> Grounded IR
                       </span>
@@ -724,12 +1148,13 @@ function App() {
                       <span>{bundle.entries.length} atomic entries</span>
                       <i />
                       <span>{bundle.project.users.length} members</span>
-                      {bundle.document && (
+                      {!!bundle.documents.length && (
                         <>
                           <i />
                           <span>
-                            {bundle.document.page_count} pages ·{' '}
-                            {formatBytes(bundle.document.size_bytes)}
+                            {bundle.documents.length}{' '}
+                            {bundle.documents.length === 1 ? 'file' : 'files'} ·{' '}
+                            {documentPages} pages · {formatBytes(documentBytes)}
                           </span>
                         </>
                       )}
@@ -738,6 +1163,24 @@ function App() {
                 </div>
 
                 <div className="project-actions">
+                  <button
+                    className="id-chip"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading || !mistralConfigured}
+                  >
+                    <UploadCloud />
+                    <span>Add files</span>
+                  </button>
+                  <button
+                    className="id-chip"
+                    onClick={() => setShowMembersModal(true)}
+                  >
+                    <Users />
+                    <span>
+                      {bundle.project.users.length}{' '}
+                      {bundle.project.users.length === 1 ? 'member' : 'members'}
+                    </span>
+                  </button>
                   <button className="id-chip" onClick={() => void copyProjectId()}>
                     <Hash />
                     <span>{bundle.project.id}</span>
@@ -769,6 +1212,12 @@ function App() {
                       <BookOpen /> IR
                     </button>
                     <button
+                      className={mode === 'issues' ? 'active' : ''}
+                      onClick={() => setMode('issues')}
+                    >
+                      <GitBranch /> Issues
+                    </button>
+                    <button
                       className={mode === 'raw' ? 'active' : ''}
                       onClick={() => setMode('raw')}
                     >
@@ -777,6 +1226,22 @@ function App() {
                   </div>
                 </div>
               </div>
+
+              {!!bundle.documents.length && (
+                <div className="project-documents">
+                  <div>
+                    <FileText />
+                    <strong>Project files</strong>
+                  </div>
+                  <div>
+                    {bundle.documents.map((document) => (
+                      <span key={document.id} title={document.filename}>
+                        {document.filename}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {changes.length > 0 && (
                 <div className="changes-banner">
@@ -889,17 +1354,17 @@ function App() {
                 <>
                   <form className="update-composer" onSubmit={postUpdate}>
                     <div className="composer-avatar">
-                      {(selectedProfile?.content.name ?? '?').slice(0, 1)}
+                      {profileNameFor(actingProfile?.id).slice(0, 1)}
                     </div>
                     <div className="composer-main">
                       <div className="composer-label">
-                        <strong>{selectedProfile?.content.name ?? 'Project member'}</strong>
+                        <strong>{profileNameFor(actingProfile?.id)}</strong>
                         <span>Share an update in your own language</span>
                       </div>
                       <textarea
                         rows={2}
                         value={updateText}
-                        disabled={!selectedProfileId || posting || !mistralConfigured}
+                        disabled={!actingProfile || posting || !mistralConfigured}
                         placeholder="What changed, what was decided, or what should the team know?"
                         onChange={(event) => setUpdateText(event.target.value)}
                       />
@@ -917,23 +1382,32 @@ function App() {
                   <div className="ir-toolbar">
                     <div>
                       <Database />
-                      <span>Project feed · Intermediate representation</span>
-                      <span className="entry-count">{bundle.entries.length}</span>
+                      <span>Project feed · Short updates</span>
+                      <span className="entry-count">{feedGroups.length}</span>
                     </div>
-                    <div className="category-row">
-                      {categories.slice(0, 4).map((category) => (
-                        <span key={category}>{category}</span>
-                      ))}
-                    </div>
+                    <span className="lens-context">
+                      Ask the IR for details
+                    </span>
                   </div>
-                  {bundle.entries.length ? (
-                    <div className="entry-list">
-                      {bundle.entries.map((entry, index) => (
-                        <IREntryCard
-                          key={entry.id}
-                          entry={entry}
-                          index={index}
-                          authorName={profileNameFor(entry.author)}
+                  {feedGroups.length ? (
+                    <div className="compact-feed">
+                      {feedGroups.map((group) => (
+                        <CompactFeedCard
+                          key={group.id}
+                          group={group}
+                          authorName={profileNameFor(group.author)}
+                          expanded={
+                            expandedFeedId === group.id ||
+                            group.entries.some(
+                              (entry) => entry.id === expandedEntryId,
+                            )
+                          }
+                          onToggle={() => {
+                            setExpandedEntryId(null)
+                            setExpandedFeedId((current) =>
+                              current === group.id ? null : group.id,
+                            )
+                          }}
                         />
                       ))}
                     </div>
@@ -945,6 +1419,36 @@ function App() {
                     </div>
                   )}
                 </>
+              ) : mode === 'issues' ? (
+                <IssuesView
+                  issues={issues}
+                  actingUserId={actingProfile?.id ?? ''}
+                  profileNameFor={profileNameFor}
+                  onCreate={() => setShowIssueModal(true)}
+                  onPropose={(issueId) => {
+                    setSolutionText('')
+                    setSolutionTarget({ issueId })
+                  }}
+                  onRevise={(issueId, proposal) => {
+                    setSolutionText(
+                      proposal.versions[proposal.versions.length - 1]
+                        ?.solution ?? '',
+                    )
+                    setSolutionTarget({
+                      issueId,
+                      proposalId: proposal.id,
+                      baseVersion:
+                        proposal.versions[proposal.versions.length - 1]
+                          ?.version,
+                    })
+                  }}
+                  onSubmit={(issueId, proposalId) =>
+                    void submitProposal(issueId, proposalId)
+                  }
+                  onReview={(issueId, proposalId, decision) =>
+                    void reviewProposal(issueId, proposalId, decision)
+                  }
+                />
               ) : (
                 <>
                   <div className="ir-toolbar">
@@ -965,9 +1469,7 @@ function App() {
             </>
           ) : (
             <EmptyState
-              onCreate={() =>
-                profiles.length ? setShowProjectModal(true) : setShowProfileModal(true)
-              }
+              onCreate={() => setShowProjectModal(true)}
               onUpload={() => fileInputRef.current?.click()}
               configured={mistralConfigured}
             />
@@ -1053,6 +1555,7 @@ function App() {
                           >
                             <ShieldCheck />
                             {shortId(citation.entry_id)}
+                            {citation.filename ? ` · ${citation.filename}` : ''}
                             {citation.page ? ` · p.${citation.page}` : ''}
                           </button>
                         ))}
@@ -1126,22 +1629,9 @@ function App() {
                 onChange={(event) => setProjectName(event.target.value)}
               />
             </label>
-            <label>
-              Creator profile
-              <select
-                value={selectedProfileId}
-                onChange={(event) => setSelectedProfileId(event.target.value)}
-              >
-                {profiles
-                  .filter((profile) => !profile.content.system)
-                  .map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.content.name ?? profile.id}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <p>The creator becomes the project’s first member and administrator.</p>
+            <p>
+              You become the project’s first member and administrator.
+            </p>
             <div className="modal-actions">
               <Button
                 type="button"
@@ -1159,46 +1649,501 @@ function App() {
         </Modal>
       )}
 
-      {showProfileModal && (
-        <Modal title="Create your context profile" onClose={() => setShowProfileModal(false)}>
-          <form className="modal-form" onSubmit={createProfile}>
+      {showJoinModal && (
+        <Modal title="Join a project" onClose={() => setShowJoinModal(false)}>
+          <form className="modal-form" onSubmit={joinProject}>
             <label>
-              Your name
+              Project ID
               <input
                 autoFocus
-                value={profileName}
-                placeholder="e.g. Maya Chen"
-                onChange={(event) => setProfileName(event.target.value)}
+                value={joinProjectId}
+                placeholder="prj_…"
+                onChange={(event) => setJoinProjectId(event.target.value)}
               />
             </label>
-            <label>
-              Your context
-              <textarea
-                rows={5}
-                value={profileContext}
-                placeholder="Describe your expertise, responsibilities, project history, and how you prefer information framed…"
-                onChange={(event) => setProfileContext(event.target.value)}
-              />
-            </label>
-            <p>No fixed roles—the model uses exactly the context you choose to share.</p>
+            <p>Ask a teammate for the project ID shown in their project header.</p>
             <div className="modal-actions">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setShowProfileModal(false)}
+                onClick={() => setShowJoinModal(false)}
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                disabled={!profileName.trim() || !profileContext.trim() || savingModal}
+                disabled={!joinProjectId.trim() || savingModal}
               >
                 {savingModal && <LoaderCircle className="spin" />}
-                Save profile
+                Join project
               </Button>
             </div>
           </form>
         </Modal>
+      )}
+
+      {showIssueModal && (
+        <Modal title="Open an issue" onClose={() => setShowIssueModal(false)}>
+          <form className="modal-form" onSubmit={createIssue}>
+            <label>
+              Issue
+              <input
+                autoFocus
+                value={issueTitle}
+                placeholder="e.g. Sensor false positives"
+                onChange={(event) => setIssueTitle(event.target.value)}
+              />
+            </label>
+            <label>
+              Short context
+              <textarea
+                rows={3}
+                value={issueSummary}
+                placeholder="What is wrong, and what outcome is needed?"
+                onChange={(event) => setIssueSummary(event.target.value)}
+              />
+            </label>
+            <label>
+              Expertise required
+              <input
+                value={issueExpertise}
+                placeholder="e.g. Signal processing and clinical validation"
+                onChange={(event) => setIssueExpertise(event.target.value)}
+              />
+            </label>
+            <label>
+              Independent expert reviewer
+              <select
+                value={issueReviewerId}
+                onChange={(event) => setIssueReviewerId(event.target.value)}
+              >
+                <option value="">Choose a member…</option>
+                {reviewerCandidates.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.content.name ?? profile.username ?? profile.id}
+                    {profile.content.expertise ?? profile.content.description
+                      ? ` — ${
+                          profile.content.expertise ?? profile.content.description
+                        }`
+                      : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p>
+              Reviewers stay independent: they can approve or reject, but cannot
+              contribute revisions to this issue.
+            </p>
+            <div className="modal-actions">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowIssueModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  !issueTitle.trim() ||
+                  !issueSummary.trim() ||
+                  !issueExpertise.trim() ||
+                  !issueReviewerId ||
+                  savingModal
+                }
+              >
+                {savingModal && <LoaderCircle className="spin" />}
+                Open issue
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {solutionTarget && (
+        <Modal
+          title={
+            solutionTarget.proposalId
+              ? 'Contribute a revision'
+              : 'Propose a solution'
+          }
+          onClose={() => setSolutionTarget(null)}
+        >
+          <form className="modal-form" onSubmit={saveSolution}>
+            <label>
+              Proposed solution
+              <textarea
+                autoFocus
+                rows={8}
+                value={solutionText}
+                placeholder="Describe the change, trade-offs, and how the team can verify it…"
+                onChange={(event) => setSolutionText(event.target.value)}
+              />
+            </label>
+            <p>
+              Saving creates an immutable revision. Other members can build on it
+              before a contributor submits it for expert review.
+            </p>
+            <div className="modal-actions">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSolutionTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={!solutionText.trim() || savingModal}
+              >
+                {savingModal && <LoaderCircle className="spin" />}
+                Save revision
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showMembersModal && bundle && (
+        <Modal
+          title={`${bundle.project.name} members`}
+          onClose={() => setShowMembersModal(false)}
+        >
+          {actingProfile &&
+            bundle.project.admins.includes(actingProfile.id) && (
+              <div className="member-add">
+                <select
+                  value={memberToAdd}
+                  onChange={(event) => setMemberToAdd(event.target.value)}
+                  disabled={!availableProfiles.length}
+                >
+                  <option value="">
+                    {availableProfiles.length
+                      ? 'Choose a person…'
+                      : 'Everyone is already a member'}
+                  </option>
+                  {availableProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.content.name ?? profile.username ?? profile.id}
+                      {profile.username ? ` (@${profile.username})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  disabled={!memberToAdd}
+                  onClick={() => void addMember()}
+                >
+                  <Plus /> Add person
+                </Button>
+              </div>
+            )}
+          <div className="member-list">
+            {projectProfiles.map((member) => {
+              const isAdmin = bundle.project.admins.includes(member.id)
+              const canManage =
+                actingProfile !== null &&
+                bundle.project.admins.includes(actingProfile.id)
+              const canPromote = canManage && !isAdmin
+              const canRemove = canManage && member.id !== actingProfile?.id
+              return (
+                <div className="member-row" key={member.id}>
+                  <span className="member-avatar">
+                    {(
+                      member.content.name ??
+                      member.username ??
+                      '?'
+                    ).slice(0, 1)}
+                  </span>
+                  <div>
+                    <strong>
+                      {member.content.name ?? member.username ?? member.id}
+                    </strong>
+                    <small>
+                      @{member.username ?? member.id}
+                      {isAdmin ? ' · Admin' : ' · Member'}
+                    </small>
+                  </div>
+                  <div className="member-actions">
+                    {canPromote && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void promoteMember(member.id)}
+                      >
+                        Promote
+                      </Button>
+                    )}
+                    {canRemove && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => void removeMember(member.id)}
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="member-modal-footer">
+            <p>
+              If the last admin exits, another member is automatically promoted.
+            </p>
+            <Button variant="destructive" onClick={() => void exitProject()}>
+              Exit project
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+function CompactFeedCard({
+  group,
+  authorName,
+  expanded,
+  onToggle,
+}: {
+  group: FeedGroup
+  authorName: string
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <article className="compact-update">
+      <div className={`compact-update-icon compact-update-${group.kind}`}>
+        {group.kind === 'document' ? (
+          <FileText />
+        ) : group.kind === 'issue' ? (
+          <Check />
+        ) : (
+          <MessageSquare />
+        )}
+      </div>
+      <div className="compact-update-body">
+        <div className="compact-update-head">
+          <strong>{group.title}</strong>
+          <span>
+            {authorName} · {formatDate(group.created_at)}
+          </span>
+        </div>
+        <p>{group.summary}</p>
+        <button className="compact-detail-toggle" onClick={onToggle}>
+          {group.entries.length}{' '}
+          {group.entries.length === 1 ? 'grounded fact' : 'grounded facts'} ·{' '}
+          {expanded ? 'Hide details' : 'Show details'}
+        </button>
+        {expanded && (
+          <div className="compact-details">
+            {group.entries.map((entry, index) => (
+              <IREntryCard
+                key={entry.id}
+                entry={entry}
+                index={index}
+                authorName={authorName}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </article>
+  )
+}
+
+function IssuesView({
+  issues,
+  actingUserId,
+  profileNameFor,
+  onCreate,
+  onPropose,
+  onRevise,
+  onSubmit,
+  onReview,
+}: {
+  issues: ProjectIssue[]
+  actingUserId: string
+  profileNameFor: (id?: string) => string
+  onCreate: () => void
+  onPropose: (issueId: string) => void
+  onRevise: (issueId: string, proposal: IssueProposal) => void
+  onSubmit: (issueId: string, proposalId: string) => void
+  onReview: (
+    issueId: string,
+    proposalId: string,
+    decision: 'approved' | 'rejected',
+  ) => void
+}) {
+  return (
+    <div className="issues-view">
+      <div className="issues-toolbar">
+        <div>
+          <GitBranch />
+          <div>
+            <strong>Issues and solution branches</strong>
+            <span>Collaborate in revisions, then request independent review.</span>
+          </div>
+        </div>
+        <Button onClick={onCreate}>
+          <Plus /> Open issue
+        </Button>
+      </div>
+
+      {!issues.length ? (
+        <div className="feed-empty">
+          <GitBranch />
+          <h3>No open issues</h3>
+          <p>Open an issue when a decision needs collaborative, expert review.</p>
+        </div>
+      ) : (
+        <div className="issue-list">
+          {issues.map((issue) => {
+            const isReviewer = issue.reviewer_ids.includes(actingUserId)
+            return (
+              <article className="issue-card" key={issue.id}>
+                <div className="issue-head">
+                  <div>
+                    <span className={`issue-status issue-status-${issue.status}`}>
+                      {issue.status}
+                    </span>
+                    <code>{issue.id.replace('iss_', 'ISS-').toUpperCase()}</code>
+                  </div>
+                  <span>{formatDate(issue.created_at)}</span>
+                </div>
+                <h2>{issue.title}</h2>
+                <p className="issue-summary">{issue.summary}</p>
+                <div className="issue-expertise">
+                  <ShieldCheck />
+                  <span>
+                    Needs <strong>{issue.required_expertise}</strong> · reviewed by{' '}
+                    {issue.reviewer_ids.map(profileNameFor).join(', ')}
+                  </span>
+                </div>
+
+                {issue.status === 'open' && !isReviewer && (
+                  <Button
+                    className="issue-propose-button"
+                    variant="outline"
+                    onClick={() => onPropose(issue.id)}
+                  >
+                    <GitBranch /> Start a solution branch
+                  </Button>
+                )}
+
+                <div className="proposal-list">
+                  {issue.proposals.map((proposal) => {
+                    const current =
+                      proposal.versions[proposal.versions.length - 1]
+                    const isContributor = proposal.contributors.includes(actingUserId)
+                    const canRevise =
+                      issue.status === 'open' &&
+                      !isReviewer &&
+                      ['draft', 'rejected'].includes(proposal.status)
+                    return (
+                      <section className="proposal-card" key={proposal.id}>
+                        <div className="proposal-head">
+                          <div>
+                            <GitBranch />
+                            <strong>Solution branch</strong>
+                            <code>{proposal.id.replace('prop_', 'PR-').toUpperCase()}</code>
+                          </div>
+                          <span className={`proposal-status proposal-${proposal.status}`}>
+                            {proposal.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <p className="proposal-solution">{current?.solution}</p>
+                        <div className="proposal-meta">
+                          <span>
+                            v{current?.version} · {proposal.versions.length}{' '}
+                            {proposal.versions.length === 1 ? 'revision' : 'revisions'}
+                          </span>
+                          <span>
+                            Contributors:{' '}
+                            {proposal.contributors.map(profileNameFor).join(', ')}
+                          </span>
+                        </div>
+                        {proposal.versions.length > 1 && (
+                          <details className="proposal-history">
+                            <summary>Revision history</summary>
+                            {proposal.versions
+                              .slice()
+                              .reverse()
+                              .map((version) => (
+                                <div key={`${proposal.id}-v${version.version}`}>
+                                  <strong>
+                                    v{version.version} · {profileNameFor(version.author)}
+                                  </strong>
+                                  <span>{formatDate(version.created_at)}</span>
+                                  <p>{version.solution}</p>
+                                </div>
+                              ))}
+                          </details>
+                        )}
+                        {!!proposal.reviews.length && (
+                          <div className="proposal-reviews">
+                            {proposal.reviews.map((review, index) => (
+                              <div key={`${proposal.id}-review-${index}`}>
+                                <strong>
+                                  {review.decision === 'approved' ? 'Approved' : 'Changes requested'}
+                                  {' '}by {profileNameFor(review.reviewer)} on v{review.version}
+                                </strong>
+                                {review.comment && <p>{review.comment}</p>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {issue.status === 'open' && (
+                          <div className="proposal-actions">
+                            {canRevise && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onRevise(issue.id, proposal)}
+                              >
+                                Contribute revision
+                              </Button>
+                            )}
+                            {isContributor && proposal.status === 'draft' && (
+                              <Button
+                                size="sm"
+                                onClick={() => onSubmit(issue.id, proposal.id)}
+                              >
+                                Submit for review
+                              </Button>
+                            )}
+                            {isReviewer && proposal.status === 'in_review' && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    onReview(issue.id, proposal.id, 'rejected')
+                                  }
+                                >
+                                  Request changes
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() =>
+                                    onReview(issue.id, proposal.id, 'approved')
+                                  }
+                                >
+                                  <Check /> Approve
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </section>
+                    )
+                  })}
+                </div>
+              </article>
+            )
+          })}
+        </div>
       )}
     </div>
   )
@@ -1246,7 +2191,13 @@ function IREntryCard({
               Source ·{' '}
               {entry.content.source.kind === 'message'
                 ? 'Project message'
-                : `Page ${entry.content.source.page ?? '—'}`}
+                : entry.content.source.kind === 'issue'
+                  ? `Approved issue proposal · v${
+                      entry.content.source.version ?? '—'
+                    }`
+                : `${
+                    entry.content.source.filename ?? 'Document'
+                  } · Page ${entry.content.source.page ?? '—'}`}
             </div>
             <blockquote>“{entry.content.source.quote}”</blockquote>
           </div>
@@ -1390,6 +2341,26 @@ function LoadingProject() {
       <div className="loading-card" />
       <div className="loading-card" />
     </div>
+  )
+}
+
+function AppRoutes() {
+  const { profile, loading } = useAuth()
+  const path = window.location.pathname
+
+  if (loading) return <LoadingProject />
+  if (!profile) {
+    return path === '/signup' ? <SignupPage /> : <LoginPage />
+  }
+  if (path === '/profile') return <ProfilePage />
+  return <WorkspacePage />
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   )
 }
 

@@ -4,9 +4,10 @@
   "title": "Profile",
   "description": "A user's account and global context — used to log in, and to re-project IR entries into a personalized view. Global per user, not scoped to any one project. password_hash is stored here but must never be included in any API response.",
   "type": "object",
+  "required": ["id", "content"],
   "properties": {
-    "id": { "type": "string" },
-    "username": { "type": "string" },
+    "id": { "type": "string", "minLength": 1 },
+    "username": { "type": "string", "minLength": 1, "maxLength": 80 },
     "password_hash": {
       "type": "string",
       "description": "Hashed password for login. Backend-only — strip before returning a profile from any endpoint."

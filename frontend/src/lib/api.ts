@@ -1,7 +1,6 @@
 import type { Profile } from '@/types/ir'
 
-// Same host as the frontend (localhost) so the session cookie is same-site.
-const BASE_URL = 'http://localhost:5001/api'
+const BASE_URL = `${import.meta.env.VITE_API_URL ?? ''}/api`
 
 class ApiError extends Error {
   status: number

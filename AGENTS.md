@@ -55,8 +55,8 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 
 - [X] IR entry, profile, and project schemas drafted
 - [X] Backend repo scaffolded (Flask, Vulture)
-- [X] Storage layer for entries/projects/profiles (in-memory, `backend/store.py`)
-- [X] Mistral client wrapper + API key wired via `.env` (`backend/mistral_client.py`)
+- [X] File-backed storage layer for entries/projects/profiles (`backend/storage.py`)
+- [X] Mistral client wrapper + API key wired via `.env` (`backend/mistral_service.py`)
 - [X] Seed script: create the MedGuard project and its four example profiles (`backend/seed.py`, wired into app startup)
 
 **Frontend**
@@ -89,15 +89,16 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 **Backend**
 
-- [ ] `GET /projects` — projects the logged-in user is a member of (scan `users` lists; fine at demo scale)
-- [ ] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
-- [ ] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
+- [X] `GET /projects` — projects the logged-in user is a member of (scan `users` lists; fine at demo scale)
+- [X] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
+- [X] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
+- [X] Admin-managed add/remove member endpoints
 
 **Frontend**
 
-- [ ] Home view — lists the projects you've joined; landing page after login, entry point into a project
-- [ ] Project creation view
-- [ ] Join-project view
+- [X] Home view — lists the projects you've joined; landing page after login, entry point into a project
+- [X] Project creation view
+- [X] Join-project view
 
 ---
 
@@ -107,14 +108,15 @@ The shell you land in after opening a project from the home view. Member managem
 
 **Backend**
 
-- [ ] `POST /projects/:id/promote` — an admin promotes another member to admin
-- [ ] `POST /projects/:id/exit` — removes the logged-in user from `users`/`admins`; if they were the last admin and other members remain, auto-promote one of them
+- [X] `POST /projects/:id/promote` — an admin promotes another member to admin
+- [X] `POST /projects/:id/exit` — removes the logged-in user from `users`/`admins`; if they were the last admin and other members remain, auto-promote one of them
 
 **Frontend**
 
-- [ ] Project view shell — project name, member list (username + whether they're an admin)
-- [ ] Promote button next to each member, visible only to admins
-- [ ] Exit-project button
+- [X] Project view shell — project name, member list (username + whether they're an admin)
+- [X] Promote button next to each member, visible only to admins
+- [X] Add/remove member controls, visible only to admins
+- [X] Exit-project button
 
 ---
 
@@ -122,15 +124,17 @@ The shell you land in after opening a project from the home view. Member managem
 
 **Backend**
 
-- [ ] Extraction prompt: NL message → structured IR `content` JSON
-- [ ] `POST /projects/:id/messages` — NL text (author = logged-in user) → runs extraction, creates IR entry, appends id to `project.ir_entry_ids`
-- [ ] Re-projection prompt: IR entry `content` + viewer's profile `content` → claim text + grounding path
-- [ ] `GET /projects/:id/view?user_id=` — re-projects every entry in the project for that user's profile, returns claims
-- [ ] `GET /projects/:id/changes?since=` — entries with `created_at` after the given timestamp
+- [X] Extraction prompt: NL message → structured IR `content` JSON
+- [X] `POST /projects/:id/messages` — NL text (author = logged-in user) → runs extraction, creates IR entry, appends id to `project.ir`
+- [X] Re-projection prompt: IR entry `content` + viewer's profile `content` → claim text + grounding path
+- [X] `GET /projects/:id/view?user_id=` — re-projects every entry in the project for that user's profile, returns claims
+- [X] `GET /projects/:id/changes?since=` — entries with `created_at` after the given timestamp
+- [X] Multiple documents per project — each upload appends grounded entries to the same IR
 
 **Frontend**
 
-- [ ] API client wrapper for the endpoints above
+- [X] API client wrapper for the endpoints above
+- [X] Multi-file project upload with automatic IR refresh
 
 ---
 
@@ -138,16 +142,16 @@ The shell you land in after opening a project from the home view. Member managem
 
 **Backend**
 
-- [ ] Re-projection prompt explicitly asked to surface implications for the viewer, not just restate the fact
-- [ ] Claims without a grounding path are dropped server-side, never returned as fact
+- [X] Re-projection prompt explicitly asked to surface implications for the viewer, not just restate the fact
+- [X] Claims without a grounding path are dropped server-side, never returned as fact
 
 **Frontend**
 
-- [ ] Project feed: chat-style timeline (time, author, content per row), not raw JSON — this is the "IR" side of the NL/IR toggle
-- [ ] Per-person view — pick a profile, fetch `/projects/:id/view` for it
-- [ ] NL/IR toggle on entries and claims
-- [ ] Grounding citation is clickable — expands/pops up the referenced IR entry
-- [ ] "Since you last viewed" — last-viewed timestamp in localStorage per project, digest banner on load
+- [X] Project feed: chat-style timeline (time, author, content per row), not raw JSON — this is the "IR" side of the NL/IR toggle
+- [X] Per-person view — pick a profile, fetch `/projects/:id/view` for it
+- [X] Lens/IR/issues/raw workspace modes
+- [X] Grounding citation is clickable — expands/pops up the referenced IR entry
+- [X] "Since you last viewed" — last-viewed timestamp in localStorage per project, digest banner on load
 
 ---
 
@@ -155,6 +159,10 @@ The shell you land in after opening a project from the home view. Member managem
 
 **Backend**
 
+- [X] Git-style issue workflow with collaborative solution branches
+- [X] Append-only proposal revisions with contributor attribution and stale-base conflict checks
+- [X] Independent assigned-expert review; contributors cannot self-approve
+- [X] Approved solution closes the issue and becomes a grounded IR decision
 - [ ] Meaning-preservation pass: prompt checks a claim against its source IR entry, flags drift/invention
 - [ ] Amendment flow: extraction of the proposal + diff against existing entry `content` + apply-on-approval logic
 - [ ] Amendment approval enforced server-side — only a user in `project.admins` can approve/reject, no exceptions
@@ -163,9 +171,10 @@ The shell you land in after opening a project from the home view. Member managem
 
 **Frontend**
 
+- [X] Issue, solution branch, revision, submit, approve, and reject UI
 - [ ] Amendment proposal UI + admin approval UI
 - [ ] Version history view
-- [ ] Attribution UI: show `author` on each entry/claim
+- [X] Attribution UI: show `author` on each entry/claim
 
 ---
 
@@ -174,13 +183,14 @@ The shell you land in after opening a project from the home view. Member managem
 **Backend**
 
 - [ ] Atlassian API pulling one real data point into an IR entry
-- [ ] Vulture clean
+- [X] Vulture clean
 
 **Frontend**
 
 - [ ] shadcn component pass for visual consistency
-- [ ] Empty/loading states for feed, view, and changes digest
-- [ ] ESLint clean
+- [X] Empty/loading states for feed, view, and changes digest
+- [X] Compact source-grouped project feed with details collapsed by default
+- [X] ESLint clean
 
 ---
 

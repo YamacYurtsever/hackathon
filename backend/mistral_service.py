@@ -303,6 +303,12 @@ class MistralDocumentService:
                 "page": entries_by_id[entry_id]["content"]
                 .get("source", {})
                 .get("page"),
+                "filename": entries_by_id[entry_id]["content"]
+                .get("source", {})
+                .get("filename"),
+                "document_id": entries_by_id[entry_id]["content"]
+                .get("source", {})
+                .get("document_id"),
                 "quote": entries_by_id[entry_id]["content"]
                 .get("source", {})
                 .get("quote", ""),

@@ -109,8 +109,29 @@ def client(tmp_path: Path):
         yield test_client, service
 
 
+def signup(
+    test_client,
+    *,
+    username: str = "maya",
+    name: str = "Maya",
+):
+    response = test_client.post(
+        "/api/signup",
+        json={"username": username, "password": "test-password"},
+    )
+    assert response.status_code == 201
+    profile = response.get_json()
+    update = test_client.put(
+        "/api/profiles/me",
+        json={"content": {"name": name, "expertise": "Firmware"}},
+    )
+    assert update.status_code == 200
+    return profile
+
+
 def test_upload_creates_schema_backed_project_and_query_uses_its_id(client):
     test_client, service = client
+    signup(test_client)
     upload = test_client.post(
         "/api/documents",
         data={"file": (BytesIO(b"fake pdf"), "protocol.pdf")},
@@ -144,6 +165,7 @@ def test_upload_creates_schema_backed_project_and_query_uses_its_id(client):
 
 def test_library_lists_uploaded_project(client):
     test_client, _service = client
+    signup(test_client)
     test_client.post(
         "/api/documents",
         data={"file": (BytesIO(b"fake pdf"), "protocol.pdf")},
@@ -157,8 +179,35 @@ def test_library_lists_uploaded_project(client):
     assert documents[0]["entry_count"] == 1
 
 
+def test_multiple_documents_append_entries_to_one_project(client):
+    test_client, _service = client
+    signup(test_client)
+    project = test_client.post(
+        "/api/projects",
+        json={"name": "Combined evidence"},
+    ).get_json()
+
+    for filename in ("protocol.pdf", "results.pdf"):
+        response = test_client.post(
+            f"/api/projects/{project['id']}/documents",
+            data={"file": (BytesIO(b"fake pdf"), filename)},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 201
+
+    bundle = response.get_json()
+    assert len(bundle["documents"]) == 2
+    assert len(bundle["project"]["documents"]) == 2
+    assert len(bundle["entries"]) == 2
+    assert {
+        entry["content"]["source"]["filename"]
+        for entry in bundle["entries"]
+    } == {"protocol.pdf", "results.pdf"}
+
+
 def test_upload_rejects_unsupported_files(client):
     test_client, _service = client
+    signup(test_client)
     response = test_client.post(
         "/api/documents",
         data={"file": (BytesIO(b"hello"), "notes.txt")},
@@ -170,6 +219,7 @@ def test_upload_rejects_unsupported_files(client):
 
 def test_unknown_project_id_returns_404(client):
     test_client, _service = client
+    signup(test_client)
     response = test_client.get("/api/projects/prj_doesnotexist")
     assert response.status_code == 404
     assert response.get_json()["error"] == "The requested resource was not found."
@@ -177,16 +227,14 @@ def test_unknown_project_id_returns_404(client):
 
 def test_profiles_projects_messages_views_and_changes(client):
     test_client, _service = client
-    profile_response = test_client.post(
-        "/api/profiles",
-        json={"content": {"name": "Maya", "expertise": "Firmware"}},
-    )
-    assert profile_response.status_code == 201
-    profile_id = profile_response.get_json()["id"]
+    assert test_client.get("/api/projects").status_code == 401
+    profile = signup(test_client)
+    profile_id = profile["id"]
+    assert "password_hash" not in profile
 
     project_response = test_client.post(
         "/api/projects",
-        json={"name": "MedGuard", "creator_id": profile_id},
+        json={"name": "MedGuard", "creator_id": "user_attacker"},
     )
     assert project_response.status_code == 201
     project = project_response.get_json()
@@ -197,7 +245,7 @@ def test_profiles_projects_messages_views_and_changes(client):
         f"/api/projects/{project['id']}/messages",
         json={
             "text": "The debounce filter was enabled.",
-            "author_id": profile_id,
+            "author_id": "user_attacker",
         },
     )
     assert message_response.status_code == 201
@@ -219,3 +267,217 @@ def test_profiles_projects_messages_views_and_changes(client):
     )
     assert changes_response.status_code == 200
     assert changes_response.get_json()["entries"][0]["id"] == entry["id"]
+
+
+def test_login_profile_privacy_join_promotion_and_exit(client):
+    test_client, _service = client
+    admin = signup(test_client, username="admin", name="Admin")
+    project = test_client.post(
+        "/api/projects",
+        json={"name": "Shared project"},
+    ).get_json()
+
+    test_client.post("/api/logout")
+    member = signup(test_client, username="member", name="Member")
+    assert test_client.get("/api/projects").get_json()["projects"] == []
+
+    joined = test_client.post(
+        f"/api/projects/{project['id']}/join",
+    )
+    assert joined.status_code == 200
+    assert member["id"] in joined.get_json()["project"]["users"]
+
+    forbidden = test_client.post(
+        f"/api/projects/{project['id']}/promote",
+        json={"user_id": member["id"], "caller_id": admin["id"]},
+    )
+    assert forbidden.status_code == 403
+
+    test_client.post("/api/logout")
+    login = test_client.post(
+        "/api/login",
+        json={"username": "admin", "password": "test-password"},
+    )
+    assert login.status_code == 200
+    assert "password_hash" not in login.get_json()
+
+    promoted = test_client.post(
+        f"/api/projects/{project['id']}/promote",
+        json={"user_id": member["id"], "caller_id": member["id"]},
+    )
+    assert promoted.status_code == 200
+    assert member["id"] in promoted.get_json()["admins"]
+
+    exited = test_client.post(
+        f"/api/projects/{project['id']}/exit",
+        json={"user_id": member["id"]},
+    )
+    assert exited.status_code == 200
+    assert admin["id"] not in exited.get_json()["users"]
+
+    profiles = test_client.get("/api/profiles").get_json()["profiles"]
+    assert all("password_hash" not in profile for profile in profiles)
+
+
+def test_admin_can_add_and_remove_project_members(client):
+    test_client, _service = client
+    admin = signup(test_client, username="admin", name="Admin")
+    project = test_client.post(
+        "/api/projects",
+        json={"name": "Managed team"},
+    ).get_json()
+
+    test_client.post("/api/logout")
+    member = signup(test_client, username="member", name="Member")
+    test_client.post("/api/logout")
+    test_client.post(
+        "/api/login",
+        json={"username": "admin", "password": "test-password"},
+    )
+
+    added = test_client.post(
+        f"/api/projects/{project['id']}/members",
+        json={"username": "member"},
+    )
+    assert added.status_code == 200
+    assert member["id"] in added.get_json()["project"]["users"]
+
+    removed = test_client.delete(
+        f"/api/projects/{project['id']}/members/{member['id']}",
+    )
+    assert removed.status_code == 200
+    assert removed.get_json()["project"]["users"] == [admin["id"]]
+
+
+def test_issue_proposals_support_collaboration_and_independent_approval(client):
+    test_client, _service = client
+    creator = signup(test_client, username="creator", name="Creator")
+    project = test_client.post(
+        "/api/projects",
+        json={"name": "Reviewed solutions"},
+    ).get_json()
+
+    accounts = {}
+    for username, name in (
+        ("reviewer", "Domain Expert"),
+        ("contributor_one", "Contributor One"),
+        ("contributor_two", "Contributor Two"),
+    ):
+        test_client.post("/api/logout")
+        accounts[username] = signup(
+            test_client,
+            username=username,
+            name=name,
+        )
+
+    test_client.post("/api/logout")
+    test_client.post(
+        "/api/login",
+        json={"username": "creator", "password": "test-password"},
+    )
+    for username in accounts:
+        added = test_client.post(
+            f"/api/projects/{project['id']}/members",
+            json={"username": username},
+        )
+        assert added.status_code == 200
+
+    issue_response = test_client.post(
+        f"/api/projects/{project['id']}/issues",
+        json={
+            "title": "Sensor false positives",
+            "summary": "The debounce behavior needs a reviewed solution.",
+            "required_expertise": "Signal processing",
+            "reviewer_ids": [accounts["reviewer"]["id"]],
+        },
+    )
+    assert issue_response.status_code == 201
+    issue = issue_response.get_json()
+
+    assigned_reviewer_removal = test_client.delete(
+        f"/api/projects/{project['id']}/members/"
+        f"{accounts['reviewer']['id']}",
+    )
+    assert assigned_reviewer_removal.status_code == 409
+
+    test_client.post("/api/logout")
+    test_client.post(
+        "/api/login",
+        json={"username": "reviewer", "password": "test-password"},
+    )
+    assigned_reviewer_exit = test_client.post(
+        f"/api/projects/{project['id']}/exit",
+    )
+    assert assigned_reviewer_exit.status_code == 409
+
+    test_client.post("/api/logout")
+    test_client.post(
+        "/api/login",
+        json={"username": "contributor_one", "password": "test-password"},
+    )
+    proposal_response = test_client.post(
+        f"/api/projects/{project['id']}/issues/{issue['id']}/proposals",
+        json={"solution": "Use a 20 ms adaptive debounce window."},
+    )
+    assert proposal_response.status_code == 201
+    proposal = proposal_response.get_json()["proposals"][0]
+
+    test_client.post("/api/logout")
+    test_client.post(
+        "/api/login",
+        json={"username": "contributor_two", "password": "test-password"},
+    )
+    revised = test_client.post(
+        f"/api/projects/{project['id']}/issues/{issue['id']}/proposals/"
+        f"{proposal['id']}/revisions",
+        json={
+            "solution": "Use a 20 ms adaptive window with a 5 ms floor.",
+            "base_version": 1,
+        },
+    )
+    assert revised.status_code == 200
+    revised_proposal = revised.get_json()["proposals"][0]
+    assert len(revised_proposal["versions"]) == 2
+    assert len(revised_proposal["contributors"]) == 2
+
+    stale_revision = test_client.post(
+        f"/api/projects/{project['id']}/issues/{issue['id']}/proposals/"
+        f"{proposal['id']}/revisions",
+        json={"solution": "Stale edit", "base_version": 1},
+    )
+    assert stale_revision.status_code == 409
+
+    submitted = test_client.post(
+        f"/api/projects/{project['id']}/issues/{issue['id']}/proposals/"
+        f"{proposal['id']}/submit",
+    )
+    assert submitted.status_code == 200
+
+    self_review = test_client.post(
+        f"/api/projects/{project['id']}/issues/{issue['id']}/proposals/"
+        f"{proposal['id']}/review",
+        json={"decision": "approved", "comment": "Looks good."},
+    )
+    assert self_review.status_code == 403
+
+    test_client.post("/api/logout")
+    test_client.post(
+        "/api/login",
+        json={"username": "reviewer", "password": "test-password"},
+    )
+    approved = test_client.post(
+        f"/api/projects/{project['id']}/issues/{issue['id']}/proposals/"
+        f"{proposal['id']}/review",
+        json={"decision": "approved", "comment": "Validated."},
+    )
+    assert approved.status_code == 200
+    resolved = approved.get_json()
+    assert resolved["status"] == "resolved"
+    assert resolved["approved_proposal_id"] == proposal["id"]
+
+    bundle = test_client.get(f"/api/projects/{project['id']}").get_json()
+    resolution = bundle["entries"][-1]
+    assert resolution["author"] == accounts["reviewer"]["id"]
+    assert resolution["content"]["source"]["kind"] == "issue"
+    assert resolution["content"]["source"]["version"] == 2
+    assert creator["id"] in bundle["project"]["users"]

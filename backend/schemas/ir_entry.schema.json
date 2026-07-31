@@ -4,6 +4,7 @@
   "title": "IREntry",
   "description": "One atomic, neutral fact in a project's Intermediate Representation. This is the source of truth every re-projected view must trace back to. Projects hold a list of IR entry ids — entries don't point back to a project.",
   "type": "object",
+  "required": ["id", "content", "author", "created_at"],
   "properties": {
     "id": { "type": "string", "description": "UUID for this IR entry." },
     "content": {

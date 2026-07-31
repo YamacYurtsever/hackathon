@@ -5,85 +5,57 @@ without forcing everyone into the same vocabulary. People post updates in their
 own language; Mistral extracts atomic IR entries, then re-projects those entries
 through each reader's free-form context profile.
 
-There are no fixed roles in the code. A profile can describe any mixture of
-expertise, responsibilities, history, and communication preferences.
-
-## Core flow
+## Architecture
 
 ```text
-Natural-language project update
-        │  + author's free-form context
-        ▼
-Mistral structured extraction
-        │
-        ├── atomic, neutral IR entries
-        ├── author + server timestamp
-        └── verified supporting quote
-                │
-                ▼
-       project source of truth
-                │  + viewer's free-form context
-                ▼
-Mistral re-projection
-        │
-        ├── viewer-relevant framing and implications
-        └── exact IR entry + content paths
+natural-language update + author's profile
+                    ↓
+       grounded, neutral IR entries
+                    ↓
+        file-backed project source of truth
+                    ↓
+             viewer's profile
+                    ↓
+ personalized claims with validated IR paths
 ```
 
-The server drops any re-projected claim whose entry ID or grounding path does
-not exist. Document ingestion remains available: PDFs, DOCX, PPTX, and images
-go through Mistral OCR before entering the same IR pipeline.
+The Flask application in `backend/app.py` is the only backend entry point. It
+owns authentication, project membership, file-backed storage, and the Mistral
+pipeline. Protected endpoints derive the acting user from the signed session
+cookie; client-supplied author, creator, caller, or exit-user IDs are not
+trusted.
 
-## Features
-
-- File-backed projects, profiles, IR entries, documents, and version records.
-- Natural-language update → structured IR extraction.
-- Profile-shaped re-projection with server-validated grounding paths.
-- Project creator automatically becomes the first member and administrator.
-- Admin promotion and safe project exit with last-admin auto-promotion.
-- Changes-since endpoint and a local “since you last viewed” frontend digest.
-- Natural, personalized, and raw-JSON views.
-- Clickable grounding citations and entry attribution.
-- Document upload and grounded Ask-the-IR chat.
-- Idempotent MedGuard seed script with four example context profiles.
+The React application provides signup/login, editable context profiles, a home
+list of joined projects, create/join flows, admin-managed membership, the IR
+feed, personalized lenses, changes-since digest, multi-file project ingestion,
+Git-style reviewed issue solutions, and grounded Ask-the-IR chat. The project
+feed groups atomic IR entries into short source updates; users expand evidence
+only when needed or ask the model for a grounded explanation.
 
 ## Run locally
 
-### Backend
+Python 3.10+ and the Node version in `frontend/.nvmrc` are required.
 
-Python 3.10+ is required.
+### Backend
 
 ```bash
 cd backend
 python3 -m venv venv
 source venv/bin/activate
-<<<<<<< HEAD
 pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Add a standard Mistral inference key to `backend/.env`:
-
-```dotenv
-MISTRAL_API_KEY=your_key_here
-```
-
-Seed the MedGuard demo, then start Flask:
+Set `MISTRAL_API_KEY` and a random `FLASK_SECRET_KEY` in `backend/.env`, then
+start Flask:
 
 ```bash
-python seed.py
 python app.py
 ```
 
-The API runs at `http://127.0.0.1:5000`.
-=======
-python src/app.py
-```
-
-Runs on http://localhost:5001 (not 5000 — macOS AirPlay Receiver squats on that port). Check it's up with `curl http://localhost:5001/api/health`.
-
-Seeded demo accounts: `engineer`, `biologist`, `lawyer`, `business` — all with password `medguard`.
->>>>>>> 7b8854a243c689233a2afa957731332bbf6cde4a
+The API runs at `http://127.0.0.1:5000`. Startup idempotently seeds MedGuard.
+The demo usernames are `engineer`, `biologist`, `lawyer`, and `business`; each
+uses password `medguard`.
 
 ### Frontend
 
@@ -98,90 +70,67 @@ Open `http://localhost:5173`. Vite proxies `/api` to Flask.
 
 ## Main API
 
-### Profiles
+Authentication:
 
 ```http
-POST /api/profiles
-GET  /api/profiles
+POST /api/signup
+POST /api/login
+POST /api/logout
+GET  /api/me
 GET  /api/profiles/:id
+PUT  /api/profiles/me
 ```
 
-Example profile:
-
-```json
-{
-  "content": {
-    "name": "Maya Chen",
-    "expertise": "Embedded sensor firmware and signal acquisition",
-    "history": "Owns the MedGuard sensor implementation",
-    "preferences": "Show units, technical trade-offs, and concrete failure modes"
-  }
-}
-```
-
-### Projects and updates
+Projects and membership:
 
 ```http
-POST /api/projects
 GET  /api/projects
+POST /api/projects
 GET  /api/projects/:id
-POST /api/projects/:id/messages
-GET  /api/projects/:id/changes?since=<ISO-8601>
-```
-
-Create a project:
-
-```json
-{
-  "name": "MedGuard",
-  "creator_id": "user_engineer"
-}
-```
-
-Add an update:
-
-```json
-{
-  "author_id": "user_engineer",
-  "text": "Bumped sampling rate to 2kHz and added a debounce filter."
-}
-```
-
-### Personalized view
-
-```http
-GET /api/projects/:id/view?user_id=user_biologist
-```
-
-Each returned claim contains an `entry_id` plus a `grounding` array of validated
-paths such as `content.statement`. Claims without a valid path are removed.
-
-### Administration and history
-
-```http
+POST /api/projects/:id/join
+POST /api/projects/:id/members
+DELETE /api/projects/:id/members/:user_id
 POST /api/projects/:id/promote
 POST /api/projects/:id/exit
-GET  /api/entries/:entry_id/versions
 ```
 
-Promotion requires a `caller_id` that is already in `project.admins`. If the
-last admin exits while members remain, the server promotes another member.
-
-### Documents and Q&A
+IR pipeline:
 
 ```http
-POST /api/documents
+POST /api/projects/:id/messages
+POST /api/projects/:id/documents
+GET  /api/projects/:id/view?user_id=<member-profile-id>
+GET  /api/projects/:id/changes?since=<ISO-8601>
+GET  /api/entries/:entry_id/versions
 POST /api/projects/:id/questions
+POST /api/documents
 ```
 
-Upload:
+Reviewed issue workflow:
 
-```bash
-curl \
-  -F "file=@example.pdf" \
-  -F "author_id=user_engineer" \
-  http://127.0.0.1:5000/api/documents
+```http
+GET  /api/projects/:id/issues
+POST /api/projects/:id/issues
+POST /api/projects/:id/issues/:issue_id/proposals
+POST /api/projects/:id/issues/:issue_id/proposals/:proposal_id/revisions
+POST /api/projects/:id/issues/:issue_id/proposals/:proposal_id/submit
+POST /api/projects/:id/issues/:issue_id/proposals/:proposal_id/review
 ```
+
+All project, IR, and profile endpoints require the session cookie. Logout
+idempotently clears it. The optional `user_id` on the view endpoint selects a
+member's context lens; it does not identify the caller.
+
+`POST /api/documents` creates a new project from a file.
+`POST /api/projects/:id/documents` adds another file to an existing project and
+automatically appends its grounded entries to that project's IR.
+
+An issue names the expertise required and one or more independent reviewers.
+Non-reviewer members can create or append immutable solution revisions. A
+contributor submits the current revision, and only an assigned reviewer who did
+not contribute can approve it. Approval records the solution as a grounded IR
+decision and resolves the issue. Revisions include their base version, so stale
+edits are rejected instead of silently overwriting another member's work.
 
 ## Verification
 

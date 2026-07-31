@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "issue.schema.json",
+  "title": "ProjectIssue",
+  "type": "object",
+  "required": [
+    "id",
+    "project_id",
+    "title",
+    "summary",
+    "required_expertise",
+    "reviewer_ids",
+    "status",
+    "created_by",
+    "created_at",
+    "proposals"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "title": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1 },
+    "required_expertise": { "type": "string", "minLength": 1 },
+    "reviewer_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string" }
+    },
+    "status": { "enum": ["open", "resolved"] },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "resolved_at": { "type": "string", "format": "date-time" },
+    "resolution_entry_id": { "type": "string" },
+    "approved_proposal_id": { "type": "string" },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "contributors",
+          "created_at",
+          "versions",
+          "reviews"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "enum": ["draft", "in_review", "approved", "rejected"] },
+          "contributors": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string" }
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "versions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["version", "solution", "author", "created_at"],
+              "properties": {
+                "version": { "type": "integer", "minimum": 1 },
+                "solution": { "type": "string", "minLength": 1 },
+                "author": { "type": "string" },
+                "created_at": { "type": "string", "format": "date-time" }
+              }
+            }
+          },
+          "reviews": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["reviewer", "decision", "comment", "version", "created_at"],
+              "properties": {
+                "reviewer": { "type": "string" },
+                "decision": { "enum": ["approved", "rejected"] },
+                "comment": { "type": "string" },
+                "version": { "type": "integer", "minimum": 1 },
+                "created_at": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash
 
 from storage import JsonStore, RecordNotFoundError
 
@@ -10,8 +11,10 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 MEDGUARD_PROJECT_ID = "prj_medguard"
+MEDGUARD_PASSWORD = "medguard"
 MEDGUARD_PROFILES: dict[str, dict[str, Any]] = {
     "user_engineer": {
+        "username": "engineer",
         "name": "Maya Chen",
         "discipline": "Embedded systems engineering",
         "expertise": (
@@ -22,6 +25,7 @@ MEDGUARD_PROFILES: dict[str, dict[str, Any]] = {
         "preferences": "Precise technical language, concrete failure modes, and units.",
     },
     "user_biologist": {
+        "username": "biologist",
         "name": "Dr. Sam Okafor",
         "discipline": "Clinical biology",
         "expertise": (
@@ -32,6 +36,7 @@ MEDGUARD_PROFILES: dict[str, dict[str, Any]] = {
         "preferences": "Frame changes in terms of study validity and evidence quality.",
     },
     "user_regulatory": {
+        "username": "lawyer",
         "name": "Elena Rossi",
         "discipline": "Medical-device regulatory law",
         "expertise": (
@@ -42,6 +47,7 @@ MEDGUARD_PROFILES: dict[str, dict[str, Any]] = {
         "preferences": "Surface filing, documentation, and compliance implications.",
     },
     "user_business": {
+        "username": "business",
         "name": "Marcus Reed",
         "discipline": "Business operations",
         "expertise": (
@@ -93,11 +99,34 @@ MEDGUARD_FACTS = [
 
 
 def seed_medguard(store: JsonStore) -> dict[str, Any]:
-    for profile_id, content in MEDGUARD_PROFILES.items():
+    password_hash = generate_password_hash(MEDGUARD_PASSWORD)
+    for profile_id, profile_data in MEDGUARD_PROFILES.items():
+        content = {
+            key: value
+            for key, value in profile_data.items()
+            if key != "username"
+        }
+        username = profile_data["username"]
         try:
             store.get_profile(profile_id)
         except RecordNotFoundError:
-            store.create_profile(content, profile_id=profile_id)
+            store.create_profile(
+                content,
+                profile_id=profile_id,
+                username=username,
+                password_hash=password_hash,
+            )
+        else:
+            profile = store.get_profile_for_auth(profile_id)
+            if (
+                profile.get("username") != username
+                or not profile.get("password_hash")
+            ):
+                store.update_profile_account(
+                    profile_id,
+                    username=username,
+                    password_hash=password_hash,
+                )
 
     try:
         project = store.get_project(MEDGUARD_PROJECT_ID)

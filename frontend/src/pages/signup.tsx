@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -16,7 +15,6 @@ import { useAuth } from '@/lib/auth-context'
 
 export function SignupPage() {
   const { setProfile } = useAuth()
-  const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -30,7 +28,7 @@ export function SignupPage() {
       setProfile(await api.signup(username, password))
       // Straight to the profile page — describing yourself happens there,
       // not at signup.
-      navigate('/profile')
+      window.location.assign('/profile')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Signup failed')
     } finally {
@@ -65,6 +63,7 @@ export function SignupPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
+                minLength={8}
                 required
               />
             </div>
@@ -74,9 +73,9 @@ export function SignupPage() {
             </Button>
             <p className="text-muted-foreground text-center text-sm">
               Already have an account?{' '}
-              <Link to="/login" className="underline">
+              <a href="/login" className="underline">
                 Log in
-              </Link>
+              </a>
             </p>
           </form>
         </CardContent>

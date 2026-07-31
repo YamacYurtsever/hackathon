@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -16,7 +15,6 @@ import { useAuth } from '@/lib/auth-context'
 
 export function LoginPage() {
   const { setProfile } = useAuth()
-  const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -28,7 +26,7 @@ export function LoginPage() {
     setSubmitting(true)
     try {
       setProfile(await api.login(username, password))
-      navigate('/profile')
+      window.location.assign('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {
@@ -72,9 +70,9 @@ export function LoginPage() {
             </Button>
             <p className="text-muted-foreground text-center text-sm">
               No account?{' '}
-              <Link to="/signup" className="underline">
+              <a href="/signup" className="underline">
                 Sign up
-              </Link>
+              </a>
             </p>
           </form>
         </CardContent>

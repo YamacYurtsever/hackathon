@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -16,7 +15,6 @@ import { useAuth } from '@/lib/auth-context'
 
 export function ProfilePage() {
   const { profile, setProfile } = useAuth()
-  const navigate = useNavigate()
   const [description, setDescription] = useState(
     typeof profile?.content.description === 'string'
       ? profile.content.description
@@ -48,16 +46,24 @@ export function ProfilePage() {
   async function handleLogout() {
     await api.logout()
     setProfile(null)
-    navigate('/login')
+    window.location.assign('/login')
   }
 
   return (
     <div className="mx-auto flex min-h-svh max-w-2xl flex-col gap-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{profile.username}</h1>
-        <Button variant="outline" onClick={handleLogout}>
-          Log out
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => window.location.assign('/')}
+          >
+            Back to projects
+          </Button>
+          <Button variant="outline" onClick={handleLogout}>
+            Log out
+          </Button>
+        </div>
       </div>
 
       <Card>

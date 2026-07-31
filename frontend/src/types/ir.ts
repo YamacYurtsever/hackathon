@@ -8,7 +8,7 @@ export interface IREntry {
   content: Record<string, unknown>
   // Role is a lens applied via ContextProfile at read/write time, not a
   // stored fact — look it up from author, don't add owner_role here.
-  // Overwritten on update — no contributor history, no versioning.
+  // The original author remains attached to the append-only entry.
   author: string
   created_at: string
   // Which domains/roles this entry affects is computed at re-projection
@@ -21,12 +21,14 @@ export interface Project {
   id: string
   name: string
   ir: string[]
+  documents: string[]
   users: string[]
   // Subset of users with admin rights. Creator is added here automatically
   // on creation. Only admins approve IR amendments and promote other
   // members to admin. If the last admin exits and users remain, one is
   // auto-promoted — a non-empty project always has at least one admin.
   admins: string[]
+  created_at: string
 }
 
 // A user's account and global context, not scoped to a project. Content is

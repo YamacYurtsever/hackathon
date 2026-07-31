@@ -52,6 +52,30 @@ def test_last_admin_exit_auto_promotes_remaining_member(store: JsonStore):
     assert updated["admins"] == ["user_member"]
 
 
+def test_only_admins_can_add_and_remove_members(store: JsonStore):
+    store.create_profile({"name": "Admin"}, profile_id="user_admin")
+    store.create_profile({"name": "Member"}, profile_id="user_member")
+    store.create_profile({"name": "Other"}, profile_id="user_other")
+    project = store.create_project(
+        "Project",
+        "user_admin",
+        member_ids=["user_member"],
+    )
+
+    with pytest.raises(PermissionDeniedError):
+        store.add_member(project["id"], "user_member", "user_other")
+
+    added = store.add_member(project["id"], "user_admin", "user_other")
+    assert "user_other" in added["users"]
+
+    removed = store.remove_member(
+        project["id"],
+        "user_admin",
+        "user_member",
+    )
+    assert "user_member" not in removed["users"]
+
+
 def test_new_entries_have_version_history(store: JsonStore):
     store.create_profile({"name": "Author"}, profile_id="user_author")
     project = store.create_project("Project", "user_author")

@@ -4,11 +4,17 @@
   "title": "Project",
   "description": "A project owns a list of IR entry ids, member user ids, and admin user ids — IR entries and users don't point back to a project. The creator becomes the first admin. Only admins approve IR amendments, and only admins can promote other members to admin. If the last admin exits and other members remain, one of them is auto-promoted — a non-empty project always has at least one admin.",
   "type": "object",
+  "required": ["id", "name", "ir", "documents", "users", "admins", "created_at"],
   "properties": {
     "id": { "type": "string" },
     "name": { "type": "string" },
     "ir": {
       "type": "array",
+      "items": { "type": "string" }
+    },
+    "documents": {
+      "type": "array",
+      "description": "Document IDs whose extracted facts have been appended to this project's IR.",
       "items": { "type": "string" }
     },
     "users": {
@@ -19,6 +25,7 @@
       "type": "array",
       "description": "Subset of users with admin rights.",
       "items": { "type": "string" }
-    }
+    },
+    "created_at": { "type": "string", "format": "date-time" }
   }
 }
