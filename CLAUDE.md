@@ -71,10 +71,12 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 **Backend**
 
-- [ ] `POST /signup` — username, password, free-text self-description → creates a `Profile` (password hashed, never returned by any endpoint)
+- [ ] `POST /signup` — username + password → creates a `Profile` with empty `content` (password hashed, never returned by any endpoint)
 - [ ] `POST /login` / `POST /logout` — verifies password, starts/ends a session (Flask session cookie)
 - [ ] Auth check on protected routes — reject if no logged-in session; acting user = session's profile id, not a body/query param
 - [ ] `GET /profiles/:id` — fetch a profile (no password_hash in the response)
+- [ ] `PUT /profiles/me` — logged-in user edits their own `content` (self-description); editable any time, not just once
+- [ ] `GET /projects` — projects the logged-in user is a member of (scan `users` lists; fine at demo scale)
 - [ ] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
 - [ ] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
 - [ ] `POST /projects/:id/promote` — an admin promotes another member to admin
@@ -82,8 +84,10 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 **Frontend**
 
-- [ ] Signup view — username, password, and a text field to describe yourself (becomes `Profile.content`)
+- [ ] Signup view — username + password only
 - [ ] Login view
+- [ ] Profile view — edit your own self-description (`Profile.content`) any time after logging in
+- [ ] Home view — lists the projects you've joined; landing page after login, entry point into a project
 - [ ] Project creation view
 - [ ] Join-project view
 - [ ] Admin management UI: promote a member, exit the project

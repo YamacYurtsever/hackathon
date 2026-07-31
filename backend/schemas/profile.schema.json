@@ -13,7 +13,7 @@
     },
     "content": {
       "type": "object",
-      "description": "Free-form self-description entered at signup: role, expertise, history blurb, whatever re-projection needs. Shape isn't fixed by separate fields.",
+      "description": "Free-form self-description: role, expertise, history blurb, whatever re-projection needs. Starts empty at signup; the user fills it in and can edit it any time from the app. Shape isn't fixed by separate fields.",
       "additionalProperties": true
     }
   }
