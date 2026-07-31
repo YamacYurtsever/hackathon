@@ -65,7 +65,7 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 
 ---
 
-### 2. Membership
+### 2. Auth
 
 Real signup/login: username + password. Once logged in, the acting user is read from the session server-side — endpoints stop trusting a client-supplied user id for "who is doing this."
 
@@ -76,22 +76,32 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 - [ ] Auth check on protected routes — reject if no logged-in session; acting user = session's profile id, not a body/query param
 - [ ] `GET /profiles/:id` — fetch a profile (no password_hash in the response)
 - [ ] `PUT /profiles/me` — logged-in user edits their own `content` (self-description); editable any time, not just once
-- [ ] `GET /projects` — projects the logged-in user is a member of (scan `users` lists; fine at demo scale)
-- [ ] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
-- [ ] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
 
 **Frontend**
 
 - [ ] Signup view — username + password only
 - [ ] Login view
 - [ ] Profile view — edit your own self-description (`Profile.content`) any time after logging in
+
+---
+
+### 3. Projects
+
+**Backend**
+
+- [ ] `GET /projects` — projects the logged-in user is a member of (scan `users` lists; fine at demo scale)
+- [ ] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
+- [ ] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
+
+**Frontend**
+
 - [ ] Home view — lists the projects you've joined; landing page after login, entry point into a project
 - [ ] Project creation view
 - [ ] Join-project view
 
 ---
 
-### 3. Project View
+### 4. Project View
 
 The shell you land in after opening a project from the home view. Member management lives here — later milestones fill the same view with the IR feed and re-projected claims.
 
@@ -108,7 +118,7 @@ The shell you land in after opening a project from the home view. Member managem
 
 ---
 
-### 4. Core Pipeline
+### 5. Core Pipeline
 
 **Backend**
 
@@ -124,7 +134,7 @@ The shell you land in after opening a project from the home view. Member managem
 
 ---
 
-### 5. Wow-Factor
+### 6. Wow-Factor
 
 **Backend**
 
@@ -141,7 +151,7 @@ The shell you land in after opening a project from the home view. Member managem
 
 ---
 
-### 6. Depth
+### 7. Depth
 
 **Backend**
 
@@ -159,7 +169,7 @@ The shell you land in after opening a project from the home view. Member managem
 
 ---
 
-### 7. Integration + Polish
+### 8. Integration + Polish
 
 **Backend**
 
@@ -174,7 +184,7 @@ The shell you land in after opening a project from the home view. Member managem
 
 ---
 
-### 8. Demo Prep
+### 9. Demo Prep
 - [ ] Full scripted MedGuard run-through, timed
 - [ ] Backup plan (recording/screenshots) if live demo fails
 - [ ] Deck finalized
