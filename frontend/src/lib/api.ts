@@ -1,5 +1,6 @@
 import type {
   ChangeRequest,
+  DocumentResult,
   IREntry,
   InputResult,
   Member,
@@ -22,11 +23,15 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // A file upload must NOT declare a content type — the browser has to set it
+  // itself, because only it knows the multipart boundary it generated.
+  const isUpload = options.body instanceof FormData
+
   const response = await fetch(`${BASE_URL}${path}`, {
     // Session cookie rides along on every call.
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: isUpload ? options.headers : { 'Content-Type': 'application/json', ...options.headers },
   })
 
   if (!response.ok) {
@@ -97,6 +102,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ text }),
     }),
+
+  // A document is a longer message, so it goes down the same path and comes
+  // back the same way: proposals to review, nothing stored.
+  uploadDocument: (id: string, file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return request<DocumentResult>(`/projects/${id}/document`, { method: 'POST', body })
+  },
 
   getView: (id: string) => request<Summary>(`/projects/${id}/view`),
 

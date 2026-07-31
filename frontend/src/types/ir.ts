@@ -45,6 +45,19 @@ export interface Member extends Profile {
   is_admin: boolean
 }
 
+// Where a fact read out of a document came from. Not part of the fact — it
+// rides along on the proposal and becomes the request's source text, so a
+// reviewer can check one proposal without re-reading the document.
+export interface Provenance {
+  document: string
+  // Usually one. A fact stated in both an abstract and an appendix is one
+  // proposal that was found in two places.
+  locations: string[]
+  // Absent when the model paraphrased instead of copying. The server verifies
+  // the quote is really in the passage and drops it if it isn't.
+  quote?: string
+}
+
 // A proposed change to the IR. Extraction produces these; they only become
 // entries once an admin approves the request carrying them.
 export interface Operation {
@@ -52,6 +65,8 @@ export interface Operation {
   // Present on updates: the entry being revised.
   target_id?: string
   content: Record<string, unknown>
+  // Present only on proposals read out of a document.
+  provenance?: Provenance
 }
 
 // One proposed change waiting on an admin. A message proposing three things
@@ -91,4 +106,17 @@ export interface InputResult {
   answer_segments?: Segment[]
   /** Operations the server threw away as unusable, so nothing vanishes silently. */
   dropped: number
+}
+
+// What one document turned out to say. Same shape as a message's proposals —
+// a document is a longer message — plus what it took to read it.
+export interface DocumentResult {
+  document: string
+  /** How many passages it was cut into, which is how many model calls it took. */
+  passages: number
+  operations: Operation[]
+  dropped: number
+  /** Passages that couldn't be read at all. Reported rather than swallowed, so
+   * nobody assumes the document was read in full when part of it wasn't. */
+  failed_passages: number
 }

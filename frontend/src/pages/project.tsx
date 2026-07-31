@@ -5,6 +5,8 @@ import { AppLayout } from '@/components/app-layout'
 import { ChangesetDialog } from '@/components/project/changeset-dialog'
 import { Composer } from '@/components/project/composer'
 import { Digest } from '@/components/project/digest'
+import { DocumentDrop } from '@/components/project/document-drop'
+import { DocumentReading, DocumentReview } from '@/components/project/document-review'
 import { EmptyProject } from '@/components/project/empty-project'
 import { Feed } from '@/components/project/feed'
 import { MembersPopover } from '@/components/project/members-popover'
@@ -13,9 +15,11 @@ import { SummaryPanel } from '@/components/project/summary-panel'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import { citationNumbers } from '@/lib/citations'
+import { refusalFor } from '@/lib/documents'
 import { useAuth } from '@/lib/auth-context'
 import type {
   ChangeRequest,
+  DocumentResult,
   IREntry,
   InputResult,
   Member,
@@ -54,6 +58,11 @@ export function ProjectPage() {
     pending?: boolean
   } | null>(null)
   const [proposal, setProposal] = useState<InputResult | null>(null)
+  // A dropped file, before and after it's been read. Kept apart from `proposal`
+  // because the two are reviewed differently — a message is two proposals you
+  // read individually, a spec is forty you scan.
+  const [reading, setReading] = useState<string | null>(null)
+  const [documentRead, setDocumentRead] = useState<DocumentResult | null>(null)
 
   const [segments, setSegments] = useState<Segment[]>([])
   const [welcome, setWelcome] = useState('')
@@ -210,6 +219,49 @@ export function ProjectPage() {
     }
   }
 
+  /** A file takes the same path a sentence takes: read, propose, submit, merge.
+   * One document per run, so a bad extraction from one can't contaminate review
+   * of the other. */
+  async function handleFiles(files: File[]) {
+    if (!projectId || !files.length) return
+    const [file] = files
+
+    // Refused here rather than after the upload, so nobody watches a file they
+    // were never going to be able to send.
+    const refusal = refusalFor(file)
+    if (refusal) {
+      setError(refusal)
+      return
+    }
+    setError(
+      files.length > 1
+        ? `Reading ${file.name} only — one document at a time.`
+        : '',
+    )
+
+    setReading(file.name)
+    try {
+      setDocumentRead(await api.uploadDocument(projectId, file))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read that document')
+    } finally {
+      setReading(null)
+    }
+  }
+
+  async function handleSubmitDocument(operations: Operation[]) {
+    if (!projectId || !documentRead) return
+    // Each operation carries its own provenance, so the server gives each
+    // request a source line naming the document and where in it the fact was.
+    const done = await run(() =>
+      api.submitChanges(projectId, documentRead.document, operations),
+    )
+    if (done) {
+      setDocumentRead(null)
+      refresh()
+    }
+  }
+
   /** Merge the whole queue, which is what bootstrapping a project looks like.
    * One bad request doesn't stop the rest — the same reason a request carries a
    * single change is the reason a failure here shouldn't be all-or-nothing. */
@@ -264,6 +316,9 @@ export function ProjectPage() {
 
   return (
     <AppLayout fill>
+      {/* The whole view is the drop target — there's no import screen, because
+          a document is a longer message and enters where a message enters. */}
+      <DocumentDrop disabled={busy || reading !== null} onDrop={handleFiles}>
       {/* Header and composer stay put; everything between them scrolls. */}
       <div className="flex h-full flex-col gap-4">
         <div className="flex shrink-0 items-start justify-between gap-4">
@@ -388,7 +443,11 @@ export function ProjectPage() {
         )}
 
         <div className="shrink-0">
-          <Composer busy={busy} onSend={handleSend} />
+          <Composer
+            busy={busy || reading !== null}
+            onSend={handleSend}
+            onAttach={(file) => handleFiles([file])}
+          />
         </div>
 
         {proposal && (
@@ -402,7 +461,21 @@ export function ProjectPage() {
             onDiscard={() => setProposal(null)}
           />
         )}
+
+        {reading && <DocumentReading name={reading} />}
+
+        {documentRead && (
+          <DocumentReview
+            key={documentRead.document}
+            result={documentRead}
+            entriesById={entriesById}
+            busy={busy}
+            onSubmit={handleSubmitDocument}
+            onDiscard={() => setDocumentRead(null)}
+          />
+        )}
       </div>
+      </DocumentDrop>
     </AppLayout>
   )
 }

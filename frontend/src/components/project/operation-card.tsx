@@ -2,12 +2,8 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { statementOf } from '@/lib/ir'
 import type { IREntry, Operation } from '@/types/ir'
-
-function statementOf(content: Record<string, unknown>): string {
-  const statement = content.statement
-  return typeof statement === 'string' ? statement : JSON.stringify(content)
-}
 
 /** One proposed change, reviewed on its own. NL reads it as a sentence; IR is
  * the editable raw content — the escape hatch when the model got it wrong. */
