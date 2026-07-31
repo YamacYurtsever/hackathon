@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from '@/components/auth-provider'
 import { useAuth } from '@/lib/auth-context'
 import { HomePage } from '@/pages/home'
-import { JoinProjectPage } from '@/pages/join-project'
+import { InvitePage } from '@/pages/invite'
 import { LoginPage } from '@/pages/login'
 import { NewProjectPage } from '@/pages/new-project'
 import { ProfilePage } from '@/pages/profile'
@@ -68,10 +68,10 @@ function App() {
             }
           />
           <Route
-            path="/projects/join"
+            path="/invite/:projectId"
             element={
               <RequireAuth>
-                <JoinProjectPage />
+                <InvitePage />
               </RequireAuth>
             }
           />

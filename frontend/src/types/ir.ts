@@ -39,4 +39,10 @@ export interface Profile {
   content: Record<string, unknown>
 }
 
+// A project member: their profile plus whether they're an admin of the
+// project being viewed. Admin-ness lives on the project, not the profile.
+export interface Member extends Profile {
+  is_admin: boolean
+}
+
 // Re-projections are runtime output, not stored data — no schema for them.

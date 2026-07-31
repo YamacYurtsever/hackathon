@@ -1,4 +1,4 @@
-import type { Profile, Project } from '@/types/ir'
+import type { Member, Profile, Project } from '@/types/ir'
 
 // Same host as the frontend (localhost) so the session cookie is same-site.
 const BASE_URL = 'http://localhost:5001/api'
@@ -55,7 +55,10 @@ export const api = {
 
   listProjects: () => request<Project[]>('/projects'),
 
-  listAvailableProjects: () => request<Project[]>('/projects/available'),
+  // Name-only preview for someone following an invite link — they can't see
+  // members or IR content until they've joined.
+  previewInvite: (id: string) =>
+    request<{ id: string; name: string }>(`/projects/${id}/invite`),
 
   createProject: (name: string) =>
     request<Project>('/projects', {
@@ -67,4 +70,15 @@ export const api = {
 
   joinProject: (id: string) =>
     request<Project>(`/projects/${id}/join`, { method: 'POST' }),
+
+  listMembers: (id: string) => request<Member[]>(`/projects/${id}/members`),
+
+  promoteMember: (id: string, userId: string) =>
+    request<Project>(`/projects/${id}/promote`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    }),
+
+  exitProject: (id: string) =>
+    request<void>(`/projects/${id}/exit`, { method: 'POST' }),
 }

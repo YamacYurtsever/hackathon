@@ -89,34 +89,39 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 ### 3. Projects
 
+Projects are not browsable — you only ever see projects you're a member of. Joining happens through an invite link an admin shares. The project id doubles as the invite token: it's a UUID4, so it can't be guessed, only shared.
+
 **Backend**
 
 - [X] `GET /projects` — projects the logged-in user is a member of (scan `users` lists; fine at demo scale)
 - [X] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
+- [X] `GET /projects/:id/invite` — name-only preview so an invitee can see what they're joining; no members or IR content until they join
 - [X] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
 
 **Frontend**
 
 - [X] Home view — lists the projects you've joined; landing page after login, entry point into a project
 - [X] Project creation view
-- [X] Join-project view
+- [X] Invite landing page (`/invite/:projectId`) — shows the project name and a join button
 
 ---
 
-### 4. Project View
+### 4. Project View Shell
 
 The shell you land in after opening a project from the home view. Member management lives here — later milestones fill the same view with the IR feed and re-projected claims.
 
 **Backend**
 
-- [ ] `POST /projects/:id/promote` — an admin promotes another member to admin
-- [ ] `POST /projects/:id/exit` — removes the logged-in user from `users`/`admins`; if they were the last admin and other members remain, auto-promote one of them
+- [X] `GET /projects/:id/members` — member profiles with admin flags, so the UI shows names not ids
+- [X] `POST /projects/:id/promote` — an admin promotes another member to admin
+- [X] `POST /projects/:id/exit` — removes the logged-in user from `users`/`admins`; if they were the last admin and other members remain, auto-promote one of them; if they were the last member, delete the project (an empty project could never regain an admin)
 
 **Frontend**
 
-- [ ] Project view shell — project name, member list (username + whether they're an admin)
-- [ ] Promote button next to each member, visible only to admins
-- [ ] Exit-project button
+- [X] Project view shell — project name, member list (username + whether they're an admin)
+- [X] Promote button next to each member, visible only to admins
+- [X] Copy-invite-link button, visible only to admins
+- [X] Exit-project button
 
 ---
 
