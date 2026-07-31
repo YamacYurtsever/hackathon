@@ -383,3 +383,10 @@ The changeset/confirm/approve flow is no longer here — it became the core writ
 - [ ] Conflict resolution UX
 - [ ] Evidence tracking for external sources
 - [ ] Project change timeline view
+
+**Document input.** Drop in a spec, protocol, or meeting transcript and extract its facts in bulk, instead of retyping them a sentence at a time. The pipeline mostly already handles it — a document is just a longer statement — but three things change at scale:
+
+- [ ] Ingest and chunk a document (PDF/markdown/plain text) into passages small enough to extract from, without splitting a fact across a boundary
+- [ ] Extraction across chunks has to reconcile: the same fact restated in a summary and an appendix should update one entry, not create three
+- [ ] Review burden is the real problem. A 20-page spec might yield 80 operations, and "confirm 80 changes" is a button nobody reads before clicking — needs grouping, or confidence-based triage, or accepting that a document import is reviewed differently from a sentence
+- [ ] `source_quote` still has to be verbatim, which gets harder once the source is a file rather than something the author just typed — the citation should probably point at the document and location, not only the quote

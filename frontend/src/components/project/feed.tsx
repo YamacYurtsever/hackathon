@@ -101,7 +101,7 @@ export function Feed({
 
   if (entries.length === 0) {
     return (
-      <Card>
+      <Card className="min-h-0 flex-1">
         <CardContent className="text-muted-foreground py-8 text-center text-sm">
           Nothing recorded yet. Say something below — a statement becomes a fact
           once an admin approves it, a question just gets answered.
@@ -111,8 +111,8 @@ export function Feed({
   }
 
   return (
-    <Card>
-      <CardContent className="flex flex-col">
+    <Card className="min-h-0 flex-1 overflow-hidden">
+      <CardContent className="flex h-full flex-col overflow-y-auto">
         {visible.map((entry) => (
           <EntryRow
             key={entry.id}

@@ -14,7 +14,7 @@ export function SummaryPanel({
 }) {
   if (loading) {
     return (
-      <Card>
+      <Card className="min-h-0 flex-1">
         <CardContent className="text-muted-foreground py-8 text-center text-sm">
           Reading the project for you…
         </CardContent>
@@ -24,7 +24,7 @@ export function SummaryPanel({
 
   if (segments.length === 0) {
     return (
-      <Card>
+      <Card className="min-h-0 flex-1">
         <CardContent className="text-muted-foreground py-8 text-center text-sm">
           Nothing here concerns you yet.
         </CardContent>
@@ -33,8 +33,9 @@ export function SummaryPanel({
   }
 
   return (
-    <Card>
-      <CardContent className="py-6">
+    <Card className="min-h-0 flex-1 overflow-hidden">
+      {/* Long summaries scroll here rather than pushing the composer off-screen. */}
+      <CardContent className="h-full overflow-y-auto py-6">
         {/* One flowing block, not one row per segment — the seams between
             segments shouldn't be visible to the reader. */}
         <p className="text-sm leading-7">

@@ -7,10 +7,10 @@ import { ChangesetPreview } from '@/components/project/changeset-preview'
 import { Composer } from '@/components/project/composer'
 import { Digest } from '@/components/project/digest'
 import { Feed } from '@/components/project/feed'
+import { MembersPopover } from '@/components/project/members-popover'
 import { PendingRequests } from '@/components/project/pending-requests'
 import { SummaryPanel } from '@/components/project/summary-panel'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { api } from '@/lib/api'
 import { citationNumbers } from '@/lib/citations'
 import { useAuth } from '@/lib/auth-context'
@@ -203,17 +203,27 @@ export function ProjectPage() {
   }
 
   return (
-    <AppLayout>
-      <div className="flex flex-col gap-6">
-        <div className="flex items-start justify-between gap-4">
+    <AppLayout fill>
+      {/* Header and composer stay put; everything between them scrolls. */}
+      <div className="flex h-full flex-col gap-4">
+        <div className="flex shrink-0 items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">{project.name}</h1>
             <p className="text-muted-foreground text-sm">
-              {entries.length} {entries.length === 1 ? 'entry' : 'entries'} ·{' '}
-              {members.length} {members.length === 1 ? 'member' : 'members'}
+              {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
             </p>
           </div>
           <div className="flex gap-2">
+            <MembersPopover
+              members={members}
+              currentUserId={profile?.id ?? ''}
+              viewerIsAdmin={viewerIsAdmin}
+              busy={busy}
+              onPromote={(userId) =>
+                projectId &&
+                run(() => api.promoteMember(projectId, userId)).then(refresh)
+              }
+            />
             {viewerIsAdmin && (
               <Button variant="outline" onClick={handleCopyInvite}>
                 {copied ? 'Link copied' : 'Copy invite link'}
@@ -231,11 +241,15 @@ export function ProjectPage() {
           </div>
         </div>
 
-        {error && <p className="text-destructive text-sm">{error}</p>}
+        {error && <p className="text-destructive shrink-0 text-sm">{error}</p>}
 
-        <Digest entries={digest} members={members} onDismiss={dismissDigest} />
+        {/* Notices are secondary to the panel, so they get a capped share of
+            the height and scroll inside it rather than squeezing it out. */}
+        {(digest.length > 0 || requests.length > 0) && (
+          <div className="flex max-h-[35%] shrink-0 flex-col gap-4 overflow-y-auto">
+            <Digest entries={digest} members={members} onDismiss={dismissDigest} />
 
-        <PendingRequests
+            <PendingRequests
           requests={requests}
           members={members}
           entriesById={entriesById}
@@ -248,14 +262,16 @@ export function ProjectPage() {
           onReject={(id) =>
             projectId && run(() => api.rejectRequest(projectId, id)).then(refresh)
           }
-          onEdit={(id, operations) =>
-            projectId &&
-            run(() => api.editRequest(projectId, id, operations)).then(refresh)
-          }
-        />
+              onEdit={(id, operations) =>
+                projectId &&
+                run(() => api.editRequest(projectId, id, operations)).then(refresh)
+              }
+            />
+          </div>
+        )}
 
         {/* One toggle, two modes of the same panel — never both at once. */}
-        <div className="flex justify-end gap-1">
+        <div className="flex shrink-0 justify-end gap-1">
           <Button
             size="sm"
             variant={mode === 'summary' ? 'secondary' : 'ghost'}
@@ -290,67 +306,34 @@ export function ProjectPage() {
           />
         )}
 
-        {pending?.kind === 'changeset' && (
-          <ChangesetPreview
-            operations={pending.operations}
-            unresolved={pending.unresolved}
-            entriesById={entriesById}
-            busy={busy}
-            onConfirm={handleConfirm}
-            onDiscard={() => setPending(null)}
-          />
+        {/* Sits directly above the composer — it's a response to what you just
+            typed, and it scrolls itself when the changeset is long. */}
+        {pending && (
+          <div className="max-h-[45%] shrink-0 overflow-y-auto">
+            {pending.kind === 'changeset' ? (
+              <ChangesetPreview
+                operations={pending.operations}
+                unresolved={pending.unresolved}
+                entriesById={entriesById}
+                busy={busy}
+                onConfirm={handleConfirm}
+                onDiscard={() => setPending(null)}
+              />
+            ) : (
+              <AnswerCard
+                question={pending.text}
+                segments={pending.segments}
+                busy={busy}
+                onDismiss={() => setPending(null)}
+                onTreatAsStatement={() => handleSend(pending.text, 'changeset')}
+              />
+            )}
+          </div>
         )}
 
-        {pending?.kind === 'answer' && (
-          <AnswerCard
-            question={pending.text}
-            segments={pending.segments}
-            busy={busy}
-            onDismiss={() => setPending(null)}
-            onTreatAsStatement={() => handleSend(pending.text, 'changeset')}
-          />
-        )}
-
-        <Composer busy={busy} onSend={handleSend} />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Members</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {members.map((member) => (
-              <div
-                key={member.id}
-                className="flex items-center justify-between gap-4 border-b py-2 last:border-b-0"
-              >
-                <div className="flex items-center gap-2 text-sm">
-                  <span>{member.username}</span>
-                  {member.id === profile?.id && (
-                    <span className="text-muted-foreground text-xs">(you)</span>
-                  )}
-                  {member.is_admin && (
-                    <span className="bg-secondary text-secondary-foreground rounded px-1.5 py-0.5 text-xs">
-                      admin
-                    </span>
-                  )}
-                </div>
-                {viewerIsAdmin && !member.is_admin && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() =>
-                      projectId &&
-                      run(() => api.promoteMember(projectId, member.id)).then(refresh)
-                    }
-                  >
-                    Make admin
-                  </Button>
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <div className="shrink-0">
+          <Composer busy={busy} onSend={handleSend} />
+        </div>
       </div>
     </AppLayout>
   )
