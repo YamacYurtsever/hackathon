@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import type { IREntry, Member } from '@/types/ir'
 
@@ -15,13 +16,35 @@ function statementOf(entry: IREntry): string {
   return typeof statement === 'string' ? statement : JSON.stringify(entry.content)
 }
 
-function EntryRow({ entry, author }: { entry: IREntry; author?: Member }) {
+function EntryRow({
+  entry,
+  author,
+  citation,
+  highlighted,
+}: {
+  entry: IREntry
+  author?: Member
+  citation?: number
+  highlighted: boolean
+}) {
   const [showRaw, setShowRaw] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
   const subject = entry.content.subject
 
+  // Arriving here from a citation click should land you on the right row.
+  useEffect(() => {
+    if (highlighted) ref.current?.scrollIntoView({ block: 'center' })
+  }, [highlighted])
+
   return (
-    <div className="flex flex-col gap-1 border-b py-3 last:border-b-0">
+    <div
+      ref={ref}
+      className={`flex flex-col gap-1 border-b px-2 py-3 transition-colors last:border-b-0 ${
+        highlighted ? 'bg-secondary rounded' : ''
+      }`}
+    >
       <div className="text-muted-foreground flex items-baseline gap-2 text-xs">
+        {citation !== undefined && <span className="font-medium">[{citation}]</span>}
         <span>{timeOf(entry.created_at)}</span>
         <span className="font-medium">{author?.username ?? 'unknown'}</span>
         {typeof subject === 'string' && (
@@ -53,11 +76,28 @@ function EntryRow({ entry, author }: { entry: IREntry; author?: Member }) {
 export function Feed({
   entries,
   members,
+  citations,
+  highlightId,
+  showAll,
+  onShowAllChange,
 }: {
   entries: IREntry[]
   members: Member[]
+  /** Entry id → citation number, when the summary cited it. */
+  citations?: Map<string, number>
+  highlightId?: string
+  showAll: boolean
+  onShowAllChange: (showAll: boolean) => void
 }) {
   const byId = new Map(members.map((member) => [member.id, member]))
+
+  // The IR side defaults to the evidence behind the summary — the receipts for
+  // what you just read — with everything else a click away.
+  const cited = citations && citations.size > 0
+  const visible = showAll || !cited
+    ? entries
+    : entries.filter((entry) => citations.has(entry.id))
+  const hidden = entries.length - visible.length
 
   if (entries.length === 0) {
     return (
@@ -73,9 +113,28 @@ export function Feed({
   return (
     <Card>
       <CardContent className="flex flex-col">
-        {entries.map((entry) => (
-          <EntryRow key={entry.id} entry={entry} author={byId.get(entry.author)} />
+        {visible.map((entry) => (
+          <EntryRow
+            key={entry.id}
+            entry={entry}
+            author={byId.get(entry.author)}
+            citation={citations?.get(entry.id)}
+            highlighted={entry.id === highlightId}
+          />
         ))}
+
+        {cited && (hidden > 0 || showAll) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2 self-start"
+            onClick={() => onShowAllChange(!showAll)}
+          >
+            {showAll
+              ? 'Show only what the summary cited'
+              : `Show everything (${hidden} more)`}
+          </Button>
+        )}
       </CardContent>
     </Card>
   )

@@ -311,29 +311,29 @@ The reading half — the same facts, re-projected through *your* context, plus a
 
 **Frontend — summary and the toggle**
 
-- [ ] Summary mode — segments from `/view` concatenated into flowing paragraphs, not a bulleted list of rows
-- [ ] Single `[ Summary | IR ]` toggle swapping the main panel between summary and thread — not two panels stacked, and not a toggle per panel
-- [ ] Toggle choice persists per project (localStorage), so the demo doesn't reset it on every navigation
-- [ ] Switching profiles visibly changes the summary while the IR side stays identical — the whole pitch in one interaction, so make it easy to demo
+- [X] Summary mode — segments from `/view` concatenated into flowing paragraphs, not a bulleted list of rows
+- [X] Single `[ Summary | IR ]` toggle swapping the main panel between summary and thread — not two panels stacked, and not a toggle per panel
+- [X] Toggle choice persists per project (localStorage), so the demo doesn't reset it on every navigation
+- [X] Switching profiles visibly changes the summary while the IR side stays identical — the whole pitch in one interaction, so make it easy to demo
 
 **Frontend — citations (present, not loud)**
 
-- [ ] Unobtrusive `[1]`-style markers at segment boundaries, not a footnote on every sentence
-- [ ] IR mode shows the entries the summary cited, in order — the toggle is prose ↔ its evidence, not two unrelated screens
-- [ ] Clicking a marker flips to IR with that entry highlighted, so "where did that come from?" is one click
-- [ ] "Show everything" control in IR mode reveals the project's full record, including entries the summary filtered out
+- [X] Unobtrusive `[1]`-style markers at segment boundaries, not a footnote on every sentence
+- [X] IR mode shows the entries the summary cited, in order — the toggle is prose ↔ its evidence, not two unrelated screens
+- [X] Clicking a marker flips to IR with that entry highlighted, so "where did that come from?" is one click
+- [X] "Show everything" control in IR mode reveals the project's full record, including entries the summary filtered out
 
 **Frontend — answers**
 
-- [ ] Answers from `/input` render in the panel with their sources, re-projected through the asker's profile like the summary
-- [ ] Answers are transient — they aren't facts, so they never enter the feed or the IR
-- [ ] Loading state while it thinks; this call is never cached, so it's always a live round-trip
+- [X] Answers from `/input` render in the panel with their sources, re-projected through the asker's profile like the summary
+- [X] Answers are transient — they aren't facts, so they never enter the feed or the IR
+- [X] Loading state while it thinks; this call is never cached, so it's always a live round-trip
 
 **Frontend — digest**
 
-- [ ] "Since you last viewed" — last-viewed timestamp per project in localStorage, `GET /changes?since=`, digest banner on open
-- [ ] Digest dismisses and updates the stored timestamp
-- [ ] No banner when nothing changed (the cached summary is served as-is)
+- [X] "Since you last viewed" — last-viewed timestamp per project in localStorage, `GET /changes?since=`, digest banner on open
+- [X] Digest dismisses and updates the stored timestamp
+- [X] No banner when nothing changed (the cached summary is served as-is)
 
 ---
 

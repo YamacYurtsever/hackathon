@@ -5,11 +5,14 @@ import { AppLayout } from '@/components/app-layout'
 import { AnswerCard } from '@/components/project/answer-card'
 import { ChangesetPreview } from '@/components/project/changeset-preview'
 import { Composer } from '@/components/project/composer'
+import { Digest } from '@/components/project/digest'
 import { Feed } from '@/components/project/feed'
 import { PendingRequests } from '@/components/project/pending-requests'
+import { SummaryPanel } from '@/components/project/summary-panel'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { api } from '@/lib/api'
+import { citationNumbers } from '@/lib/citations'
 import { useAuth } from '@/lib/auth-context'
 import type {
   ChangeRequest,
@@ -18,7 +21,13 @@ import type {
   Member,
   Operation,
   Project,
+  Segment,
 } from '@/types/ir'
+
+type Mode = 'summary' | 'ir'
+
+const modeKey = (id: string) => `ct:mode:${id}`
+const lastViewedKey = (id: string) => `ct:lastViewed:${id}`
 
 export function ProjectPage() {
   const { projectId } = useParams()
@@ -29,30 +38,50 @@ export function ProjectPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [entries, setEntries] = useState<IREntry[]>([])
   const [requests, setRequests] = useState<ChangeRequest[]>([])
+  const [digest, setDigest] = useState<IREntry[]>([])
   const [pending, setPending] = useState<InputResult | null>(null)
+
+  const [segments, setSegments] = useState<Segment[]>([])
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  // Restored from the last visit, so navigating around mid-demo doesn't keep
+  // resetting you to the other mode.
+  const [mode, setMode] = useState<Mode>(
+    () =>
+      (projectId && (localStorage.getItem(modeKey(projectId)) as Mode)) || 'summary',
+  )
+  const [showAll, setShowAll] = useState(false)
+  const [highlightId, setHighlightId] = useState<string | undefined>()
 
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  // Bumped when applied changes make the summary stale.
+  const [summaryKey, setSummaryKey] = useState(0)
 
   useEffect(() => {
     if (!projectId) return
     let cancelled = false
+
+    const since = localStorage.getItem(lastViewedKey(projectId))
 
     Promise.all([
       api.getProject(projectId),
       api.listMembers(projectId),
       api.getChanges(projectId),
       api.listRequests(projectId),
+      since ? api.getChanges(projectId, since) : Promise.resolve([]),
     ])
-      .then(([loadedProject, loadedMembers, loadedEntries, loadedRequests]) => {
+      .then(([loadedProject, loadedMembers, loadedEntries, loadedRequests, since_]) => {
         if (cancelled) return
         setProject(loadedProject)
         setMembers(loadedMembers)
         setEntries(loadedEntries)
         setRequests(loadedRequests)
+        setDigest(since_)
+        // First visit: start the clock rather than claiming everything is new.
+        if (!since) localStorage.setItem(lastViewedKey(projectId), new Date().toISOString())
       })
       .catch((err) => {
         if (!cancelled)
@@ -67,12 +96,55 @@ export function ProjectPage() {
     }
   }, [projectId, reloadKey])
 
-  const viewerIsAdmin = Boolean(
-    profile && project?.admins.includes(profile.id),
-  )
-  const entriesById = new Map(entries.map((entry) => [entry.id, entry]))
+  // Only fetch the summary when it's actually on screen — it's a live model
+  // call, so loading it for someone reading the IR would be waste.
+  useEffect(() => {
+    if (!projectId || mode !== 'summary') return
+    let cancelled = false
 
-  const refresh = () => setReloadKey((key) => key + 1)
+    const load = async () => {
+      setSummaryLoading(true)
+      try {
+        const view = await api.getView(projectId)
+        if (!cancelled) setSegments(view.segments)
+      } catch (err) {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : 'Could not load summary')
+      } finally {
+        if (!cancelled) setSummaryLoading(false)
+      }
+    }
+    load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, mode, summaryKey])
+
+  const viewerIsAdmin = Boolean(profile && project?.admins.includes(profile.id))
+  const entriesById = new Map(entries.map((entry) => [entry.id, entry]))
+  const citations = citationNumbers(segments)
+
+  const refresh = () => {
+    setReloadKey((key) => key + 1)
+    setSummaryKey((key) => key + 1)
+  }
+
+  function switchMode(next: Mode) {
+    setMode(next)
+    if (projectId) localStorage.setItem(modeKey(projectId), next)
+  }
+
+  function showEvidenceFor(entryId: string) {
+    setHighlightId(entryId)
+    switchMode('ir')
+  }
+
+  function dismissDigest() {
+    setDigest([])
+    if (projectId)
+      localStorage.setItem(lastViewedKey(projectId), new Date().toISOString())
+  }
 
   async function run<T>(work: () => Promise<T>): Promise<T | undefined> {
     setError('')
@@ -161,6 +233,8 @@ export function ProjectPage() {
 
         {error && <p className="text-destructive text-sm">{error}</p>}
 
+        <Digest entries={digest} members={members} onDismiss={dismissDigest} />
+
         <PendingRequests
           requests={requests}
           members={members}
@@ -169,8 +243,7 @@ export function ProjectPage() {
           isAdmin={viewerIsAdmin}
           busy={busy}
           onApprove={(id) =>
-            projectId &&
-            run(() => api.approveRequest(projectId, id)).then(refresh)
+            projectId && run(() => api.approveRequest(projectId, id)).then(refresh)
           }
           onReject={(id) =>
             projectId && run(() => api.rejectRequest(projectId, id)).then(refresh)
@@ -181,7 +254,41 @@ export function ProjectPage() {
           }
         />
 
-        <Feed entries={entries} members={members} />
+        {/* One toggle, two modes of the same panel — never both at once. */}
+        <div className="flex justify-end gap-1">
+          <Button
+            size="sm"
+            variant={mode === 'summary' ? 'secondary' : 'ghost'}
+            onClick={() => switchMode('summary')}
+          >
+            Summary
+          </Button>
+          <Button
+            size="sm"
+            variant={mode === 'ir' ? 'secondary' : 'ghost'}
+            onClick={() => switchMode('ir')}
+          >
+            IR
+          </Button>
+        </div>
+
+        {mode === 'summary' ? (
+          <SummaryPanel
+            segments={segments}
+            loading={summaryLoading}
+            numbers={citations}
+            onCitationClick={showEvidenceFor}
+          />
+        ) : (
+          <Feed
+            entries={entries}
+            members={members}
+            citations={citations}
+            highlightId={highlightId}
+            showAll={showAll}
+            onShowAllChange={setShowAll}
+          />
+        )}
 
         {pending?.kind === 'changeset' && (
           <ChangesetPreview
