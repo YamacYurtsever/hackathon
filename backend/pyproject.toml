@@ -1,3 +1,3 @@
 [tool.vulture]
 min_confidence = 80
-paths = ["app.py", "store.py", "mistral_client.py", "seed.py", ".vulture_whitelist.py"]
+paths = ["src"]

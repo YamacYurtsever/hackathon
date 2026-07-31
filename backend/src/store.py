@@ -25,11 +25,20 @@ def create_profile(username: str, password_hash: str, content: dict) -> dict:
     return profile
 
 
+def get_profile(profile_id: str) -> dict | None:
+    return profiles.get(profile_id)
+
+
 def find_profile_by_username(username: str) -> dict | None:
     for profile in profiles.values():
         if profile["username"] == username:
             return profile
     return None
+
+
+def public_profile(profile: dict) -> dict:
+    """Profile without password_hash — the only shape safe to send to a client."""
+    return {k: v for k, v in profile.items() if k != "password_hash"}
 
 
 def create_project(name: str, creator_id: str) -> dict:

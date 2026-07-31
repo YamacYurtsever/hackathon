@@ -71,17 +71,17 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 **Backend**
 
-- [ ] `POST /signup` — username + password → creates a `Profile` with empty `content` (password hashed, never returned by any endpoint)
-- [ ] `POST /login` / `POST /logout` — verifies password, starts/ends a session (Flask session cookie)
-- [ ] Auth check on protected routes — reject if no logged-in session; acting user = session's profile id, not a body/query param
-- [ ] `GET /profiles/:id` — fetch a profile (no password_hash in the response)
-- [ ] `PUT /profiles/me` — logged-in user edits their own `content` (self-description); editable any time, not just once
+- [X] `POST /signup` — username + password → creates a `Profile` with empty `content` (password hashed, never returned by any endpoint)
+- [X] `POST /login` / `POST /logout` — verifies password, starts/ends a session (Flask session cookie)
+- [X] Auth check on protected routes — reject if no logged-in session; acting user = session's profile id, not a body/query param
+- [X] `GET /profiles/:id` — fetch a profile (no password_hash in the response)
+- [X] `PUT /profiles/me` — logged-in user edits their own `content` (self-description); editable any time, not just once
 
 **Frontend**
 
-- [ ] Signup view — username + password only
-- [ ] Login view
-- [ ] Profile view — edit your own self-description (`Profile.content`) any time after logging in
+- [X] Signup view — username + password only
+- [X] Login view
+- [X] Profile view — edit your own self-description (`Profile.content`) any time after logging in
 
 ---
 
