@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import type { IREntry, Member } from '@/types/ir'
 
@@ -27,9 +26,7 @@ function EntryRow({
   citation?: number
   highlighted: boolean
 }) {
-  const [showRaw, setShowRaw] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const subject = entry.content.subject
 
   // Arriving here from a citation click should land you on the right row.
   useEffect(() => {
@@ -39,7 +36,7 @@ function EntryRow({
   return (
     <div
       ref={ref}
-      className={`flex flex-col gap-1 border-b px-2 py-3 transition-colors last:border-b-0 ${
+      className={`flex flex-col gap-1 border-b py-3 transition-colors first:pt-0 last:border-b-0 last:pb-0 ${
         highlighted ? 'bg-secondary rounded' : ''
       }`}
     >
@@ -47,28 +44,9 @@ function EntryRow({
         {citation !== undefined && <span className="font-medium">[{citation}]</span>}
         <span>{timeOf(entry.created_at)}</span>
         <span className="font-medium">{author?.username ?? 'unknown'}</span>
-        {typeof subject === 'string' && (
-          <span className="bg-secondary text-secondary-foreground rounded px-1.5 py-0.5">
-            {subject}
-          </span>
-        )}
       </div>
 
       <p className="text-sm">{statementOf(entry)}</p>
-
-      <button
-        type="button"
-        onClick={() => setShowRaw(!showRaw)}
-        className="text-muted-foreground hover:text-foreground w-fit text-xs underline"
-      >
-        {showRaw ? 'hide' : 'raw IR'}
-      </button>
-
-      {showRaw && (
-        <pre className="bg-muted overflow-x-auto rounded p-2 text-xs">
-          {JSON.stringify(entry.content, null, 2)}
-        </pre>
-      )}
     </div>
   )
 }
@@ -78,31 +56,31 @@ export function Feed({
   members,
   citations,
   highlightId,
-  showAll,
-  onShowAllChange,
 }: {
   entries: IREntry[]
   members: Member[]
-  /** Entry id → citation number, when the summary cited it. */
+  /** Entry id → citation number, for whatever the NL panel is showing. */
   citations?: Map<string, number>
   highlightId?: string
-  showAll: boolean
-  onShowAllChange: (showAll: boolean) => void
 }) {
   const byId = new Map(members.map((member) => [member.id, member]))
 
-  // The IR side defaults to the evidence behind the summary — the receipts for
-  // what you just read — with everything else a click away.
+  // IR is the evidence for what you just read — the entries the summary or the
+  // answer actually drew on, in the order they were cited so [1] comes first
+  // and following a marker lands where you expect. With nothing cited yet
+  // there's no reading to be evidence for, so the whole record shows, in time
+  // order as a plain timeline.
   const cited = citations && citations.size > 0
-  const visible = showAll || !cited
+  const visible = cited
     ? entries
-    : entries.filter((entry) => citations.has(entry.id))
-  const hidden = entries.length - visible.length
+        .filter((entry) => citations.has(entry.id))
+        .sort((a, b) => citations.get(a.id)! - citations.get(b.id)!)
+    : entries
 
   if (entries.length === 0) {
     return (
-      <Card className="min-h-0 flex-1">
-        <CardContent className="text-muted-foreground py-8 text-center text-sm">
+      <Card className="min-h-0 flex-1 py-0">
+        <CardContent className="text-muted-foreground p-6 text-center text-sm">
           Nothing recorded yet. Say something below — a statement becomes a fact
           once an admin approves it, a question just gets answered.
         </CardContent>
@@ -111,8 +89,8 @@ export function Feed({
   }
 
   return (
-    <Card className="min-h-0 flex-1 overflow-hidden">
-      <CardContent className="flex h-full flex-col overflow-y-auto">
+    <Card className="min-h-0 flex-1 overflow-hidden py-0">
+      <CardContent className="flex h-full flex-col overflow-y-auto p-6">
         {visible.map((entry) => (
           <EntryRow
             key={entry.id}
@@ -122,19 +100,6 @@ export function Feed({
             highlighted={entry.id === highlightId}
           />
         ))}
-
-        {cited && (hidden > 0 || showAll) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2 self-start"
-            onClick={() => onShowAllChange(!showAll)}
-          >
-            {showAll
-              ? 'Show only what the summary cited'
-              : `Show everything (${hidden} more)`}
-          </Button>
-        )}
       </CardContent>
     </Card>
   )

@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { AppLayout } from '@/components/app-layout'
-import { AnswerCard } from '@/components/project/answer-card'
 import { ChangesetDialog } from '@/components/project/changeset-dialog'
 import { Composer } from '@/components/project/composer'
 import { Digest } from '@/components/project/digest'
+import { EmptyProject } from '@/components/project/empty-project'
 import { Feed } from '@/components/project/feed'
 import { MembersPopover } from '@/components/project/members-popover'
 import { PendingRequests } from '@/components/project/pending-requests'
@@ -24,10 +24,17 @@ import type {
   Segment,
 } from '@/types/ir'
 
-type Mode = 'summary' | 'ir'
+type Mode = 'nl' | 'ir'
 
 const modeKey = (id: string) => `ct:mode:${id}`
 const lastViewedKey = (id: string) => `ct:lastViewed:${id}`
+
+/** Anything unrecognised falls back to NL — including the "summary" this mode
+ * used to be called, which is still sitting in people's localStorage. */
+function storedMode(projectId: string | undefined): Mode {
+  const stored = projectId && localStorage.getItem(modeKey(projectId))
+  return stored === 'ir' ? 'ir' : 'nl'
+}
 
 export function ProjectPage() {
   const { projectId } = useParams()
@@ -41,18 +48,19 @@ export function ProjectPage() {
   const [digest, setDigest] = useState<IREntry[]>([])
   // Split on purpose: an answer is something to read, a proposal is a decision
   // to make, so they get different weight in the UI.
-  const [answer, setAnswer] = useState<{ question: string; text: string } | null>(null)
+  const [answer, setAnswer] = useState<{
+    question: string
+    segments: Segment[]
+    pending?: boolean
+  } | null>(null)
   const [proposal, setProposal] = useState<InputResult | null>(null)
 
   const [segments, setSegments] = useState<Segment[]>([])
+  const [welcome, setWelcome] = useState('')
   const [summaryLoading, setSummaryLoading] = useState(false)
   // Restored from the last visit, so navigating around mid-demo doesn't keep
   // resetting you to the other mode.
-  const [mode, setMode] = useState<Mode>(
-    () =>
-      (projectId && (localStorage.getItem(modeKey(projectId)) as Mode)) || 'summary',
-  )
-  const [showAll, setShowAll] = useState(false)
+  const [mode, setMode] = useState<Mode>(() => storedMode(projectId))
   const [highlightId, setHighlightId] = useState<string | undefined>()
 
   const [loading, setLoading] = useState(true)
@@ -100,16 +108,20 @@ export function ProjectPage() {
   }, [projectId, reloadKey])
 
   // Only fetch the summary when it's actually on screen — it's a live model
-  // call, so loading it for someone reading the IR would be waste.
+  // call, so loading it for someone reading the IR would be waste. On an empty
+  // project the same endpoint returns the welcome instead of segments.
   useEffect(() => {
-    if (!projectId || mode !== 'summary') return
+    if (!projectId || mode !== 'nl') return
     let cancelled = false
 
     const load = async () => {
       setSummaryLoading(true)
       try {
         const view = await api.getView(projectId)
-        if (!cancelled) setSegments(view.segments)
+        if (!cancelled) {
+          setSegments(view.segments)
+          setWelcome(view.welcome ?? '')
+        }
       } catch (err) {
         if (!cancelled)
           setError(err instanceof Error ? err.message : 'Could not load summary')
@@ -126,7 +138,9 @@ export function ProjectPage() {
 
   const viewerIsAdmin = Boolean(profile && project?.admins.includes(profile.id))
   const entriesById = new Map(entries.map((entry) => [entry.id, entry]))
-  const citations = citationNumbers(segments)
+  // Whatever the panel is currently showing is what IR should be the evidence
+  // for — an answer's sources while one stands, the summary's otherwise.
+  const citations = citationNumbers(answer ? answer.segments : segments)
 
   const refresh = () => {
     setReloadKey((key) => key + 1)
@@ -163,11 +177,25 @@ export function ProjectPage() {
 
   async function handleSend(text: string) {
     if (!projectId) return
+
+    // We don't yet know whether this asked anything — that's the model's call —
+    // so the panel shows the message thinking, and settles into an answer or
+    // back into the summary once we do know.
+    setAnswer({ question: text, segments: [], pending: true })
+    switchMode('nl')
+
     const result = await run(() => api.sendInput(projectId, text))
-    if (!result) return
+    if (!result) {
+      setAnswer(null)
+      return
+    }
 
     // A message can do both, so neither clears the other.
-    setAnswer(result.answer ? { question: text, text: result.answer } : null)
+    setAnswer(
+      result.answer
+        ? { question: text, segments: result.answer_segments ?? [] }
+        : null,
+    )
     setProposal(result.operations.length || result.dropped ? result : null)
   }
 
@@ -180,6 +208,31 @@ export function ProjectPage() {
       setProposal(null)
       refresh()
     }
+  }
+
+  /** Merge the whole queue, which is what bootstrapping a project looks like.
+   * One bad request doesn't stop the rest — the same reason a request carries a
+   * single change is the reason a failure here shouldn't be all-or-nothing. */
+  async function handleMergeAll() {
+    if (!projectId) return
+    setError('')
+    setBusy(true)
+
+    let failed = 0
+    for (const pending of requests) {
+      try {
+        await api.mergeRequest(projectId, pending.id)
+      } catch {
+        failed += 1
+      }
+    }
+
+    setBusy(false)
+    if (failed > 0)
+      setError(
+        `${failed} of ${requests.length} couldn't be merged — they're still in the queue.`,
+      )
+    refresh()
   }
 
   async function handleCopyInvite() {
@@ -221,6 +274,7 @@ export function ProjectPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Digest entries={digest} members={members} onDismiss={dismissDigest} />
             <PendingRequests
               requests={requests}
               members={members}
@@ -232,6 +286,7 @@ export function ProjectPage() {
                 projectId &&
                 run(() => api.mergeRequest(projectId, id)).then(refresh)
               }
+              onMergeAll={handleMergeAll}
               onReject={(id) =>
                 projectId &&
                 run(() => api.rejectRequest(projectId, id)).then(refresh)
@@ -270,58 +325,66 @@ export function ProjectPage() {
 
         {error && <p className="text-destructive shrink-0 text-sm">{error}</p>}
 
-        {/* Capped so a long digest can't squeeze the panel out. */}
-        {digest.length > 0 && (
-          <div className="max-h-[35%] shrink-0 overflow-y-auto">
-            <Digest entries={digest} members={members} onDismiss={dismissDigest} />
+        {/* One toggle, two modes of the same panel — never both at once. The
+            arrow between them is the point of the whole screen: prose on one
+            side, the entries it was built from on the other. */}
+        <div className="flex shrink-0 justify-center">
+          <div className="bg-muted relative flex items-center rounded-full p-1">
+            {/* One pill that slides, rather than two that light up — the
+                movement is what makes the two sides read as one thing seen
+                two ways. */}
+            <span
+              aria-hidden
+              // Tailwind v4's translate-x-* sets the CSS `translate` property,
+              // not `transform` — so transition-transform animates nothing.
+              className={`bg-background absolute top-1 bottom-1 left-1 w-16 rounded-full shadow-sm transition-[translate] duration-200 ease-out motion-reduce:transition-none ${
+                mode === 'ir' ? 'translate-x-full' : 'translate-x-0'
+              }`}
+            />
+            <button
+              type="button"
+              onClick={() => switchMode('nl')}
+              className={`relative w-16 rounded-full py-1 text-sm font-medium transition-colors ${
+                mode === 'nl' ? 'text-foreground' : 'text-muted-foreground'
+              }`}
+            >
+              NL
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode('ir')}
+              className={`relative w-16 rounded-full py-1 text-sm font-medium transition-colors ${
+                mode === 'ir' ? 'text-foreground' : 'text-muted-foreground'
+              }`}
+            >
+              IR
+            </button>
           </div>
-        )}
-
-        {/* One toggle, two modes of the same panel — never both at once. */}
-        <div className="flex shrink-0 justify-end gap-1">
-          <Button
-            size="sm"
-            variant={mode === 'summary' ? 'secondary' : 'ghost'}
-            onClick={() => switchMode('summary')}
-          >
-            Summary
-          </Button>
-          <Button
-            size="sm"
-            variant={mode === 'ir' ? 'secondary' : 'ghost'}
-            onClick={() => switchMode('ir')}
-          >
-            IR
-          </Button>
         </div>
 
-        {mode === 'summary' ? (
-          <SummaryPanel
-            segments={segments}
-            loading={summaryLoading}
-            numbers={citations}
-            onCitationClick={showEvidenceFor}
-          />
+        {mode === 'nl' ? (
+          entries.length === 0 && !answer ? (
+            <EmptyProject
+              projectName={project.name}
+              welcome={welcome}
+              loading={summaryLoading}
+            />
+          ) : (
+            <SummaryPanel
+              segments={segments}
+              loading={summaryLoading}
+              numbers={citations}
+              answer={answer}
+              onCitationClick={showEvidenceFor}
+            />
+          )
         ) : (
           <Feed
             entries={entries}
             members={members}
             citations={citations}
             highlightId={highlightId}
-            showAll={showAll}
-            onShowAllChange={setShowAll}
           />
-        )}
-
-        {/* A reply to what you just asked, directly above the composer. */}
-        {answer && (
-          <div className="max-h-[40%] shrink-0 overflow-y-auto">
-            <AnswerCard
-              question={answer.question}
-              answer={answer.text}
-              onDismiss={() => setAnswer(null)}
-            />
-          </div>
         )}
 
         <div className="shrink-0">

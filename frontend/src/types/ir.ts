@@ -75,6 +75,9 @@ export interface Segment {
 export interface Summary {
   segments: Segment[]
   cached: boolean
+  /** Only when the project has no entries: an orienting line for this reader,
+   * in place of a summary there is nothing to write. */
+  welcome?: string
 }
 
 // What one message turned out to be. It can propose changes, answer a
@@ -83,6 +86,9 @@ export interface InputResult {
   text: string
   operations: Operation[]
   answer: string | null
+  /** The answer re-projected for the asker, carrying the entries it drew on.
+   * Present whenever `answer` is. */
+  answer_segments?: Segment[]
   /** Operations the server threw away as unusable, so nothing vanishes silently. */
   dropped: number
 }

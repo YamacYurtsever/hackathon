@@ -41,11 +41,17 @@ def project_input(project_id: str):
     if not text:
         return jsonify({"error": "text is required"}), 400
 
-    result = interpret_message(
-        text,
-        profile=current_profile(),
-        existing=store.entries_for_project(project_id),
-    )
+    entries = store.entries_for_project(project_id)
+    result = interpret_message(text, profile=current_profile(), existing=entries)
+
+    # Reading the message tells us *whether* something was asked; re-projecting
+    # answers it properly — in the asker's terms, with the entries it drew on,
+    # and through the same citation check the summary goes through. An answer
+    # without sources is the one bit of prose here nobody could trace.
+    if result["answer"]:
+        grounded = reprojection.answer(text, entries, current_profile())
+        result["answer_segments"] = grounded["segments"]
+
     return jsonify({"text": text, **result})
 
 
@@ -59,7 +65,18 @@ def project_view(project_id: str):
 
     entries = store.entries_for_project(project_id)
     if not entries:
-        return jsonify({"segments": [], "cached": False})
+        # Nothing to summarize, but the reader is still someone in particular —
+        # orient them in their own terms rather than showing a blank panel.
+        greeting = reprojection.cached_welcome(
+            current_profile()["id"], current_profile()
+        )
+        return jsonify(
+            {
+                "segments": [],
+                "welcome": greeting["text"],
+                "cached": greeting["cached"],
+            }
+        )
 
     return jsonify(
         reprojection.cached_summary(

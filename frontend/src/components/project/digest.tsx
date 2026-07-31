@@ -1,5 +1,14 @@
+import { useState } from 'react'
+
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import type { IREntry, Member } from '@/types/ir'
 
 function statementOf(entry: IREntry): string {
@@ -7,7 +16,9 @@ function statementOf(entry: IREntry): string {
   return typeof statement === 'string' ? statement : JSON.stringify(entry.content)
 }
 
-/** What landed while you were away. Absent entirely when nothing changed. */
+/** What landed while you were away, behind a header button like the pending
+ * queue — a banner pushed the panel down every time you opened the project,
+ * for something you often only want to glance at. Absent when nothing changed. */
 export function Digest({
   entries,
   members,
@@ -17,34 +28,47 @@ export function Digest({
   members: Member[]
   onDismiss: () => void
 }) {
+  const [open, setOpen] = useState(false)
+
   if (entries.length === 0) return null
 
   const byId = new Map(members.map((member) => [member.id, member]))
 
   return (
-    <Card className="border-primary/40">
-      <CardContent className="flex flex-col gap-3 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-sm font-medium">
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        render={<Button variant="outline">{entries.length} new</Button>}
+      />
+      <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
             {entries.length} {entries.length === 1 ? 'change' : 'changes'} since you
             last looked
-          </span>
-          <Button size="sm" variant="ghost" onClick={onDismiss}>
-            Got it
-          </Button>
-        </div>
+          </DialogTitle>
+        </DialogHeader>
 
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col gap-2">
           {entries.map((entry) => (
             <li key={entry.id} className="text-muted-foreground text-sm">
-              <span className="font-medium">
+              <span className="text-foreground font-medium">
                 {byId.get(entry.author)?.username ?? 'someone'}
               </span>{' '}
               — {statementOf(entry)}
             </li>
           ))}
         </ul>
-      </CardContent>
-    </Card>
+
+        <DialogFooter>
+          <Button
+            onClick={() => {
+              setOpen(false)
+              onDismiss()
+            }}
+          >
+            Got it
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

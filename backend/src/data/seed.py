@@ -58,6 +58,64 @@ EXAMPLE_PROFILES = [
 # Demo-only: every seeded account shares this password.
 SEED_PASSWORD = "medguard"
 
+# How a real project starts: the creator describes it in a paragraph and
+# approves what we read out of it. This is the message MedGuard was founded
+# with — kept here so it's obvious where the entries below came from.
+#
+# The entries are written out literally rather than extracted by calling the
+# model at boot: seeding has to be deterministic, offline, and not require an
+# API key before the app will start. Re-running the paragraph through /input
+# should produce something close to this list.
+FOUNDING_MESSAGE = (
+    "MedGuard is an implantable cardiac monitor that flags arrhythmia events "
+    "for outpatient review. The biopotential front-end samples at 1 kHz with a "
+    "second-order anti-aliasing filter. We're filing a 510(k) with the Reveal "
+    "LINQ II as predicate. Detection runs on-device and its false-positive rate "
+    "is the number the clinical evidence package lives or dies on, so Marcus is "
+    "running a characterisation study against annotated Holter recordings. "
+    "The hospital pilot is committed for 14 March and the programme budget is "
+    "$2.4M through end of year."
+)
+
+# One fact per entry, neutral, no consequences worked out — the same shape
+# reading the paragraph through the pipeline would produce.
+#
+# Note the sampling rate is 1 kHz. The demo's opening move is the engineer
+# saying they bumped it to 2 kHz, which should land as an *update* to this
+# entry with a visible before/after — not as another create.
+FOUNDING_ENTRIES = [
+    {
+        "statement": "MedGuard is an implantable cardiac monitor that flags arrhythmia events for outpatient review.",
+    },
+    {
+        "statement": "The biopotential front-end samples at 1 kHz.",
+        "sampling_rate": "1 kHz",
+    },
+    {
+        "statement": "The front-end uses a second-order anti-aliasing filter.",
+    },
+    {
+        "statement": "The device is being filed as a 510(k) with the Reveal LINQ II as the predicate device.",
+    },
+    {
+        "statement": "Arrhythmia detection runs on-device.",
+    },
+    {
+        "statement": "The detection false-positive rate is the primary measure the clinical evidence package depends on.",
+    },
+    {
+        "statement": "A false-positive characterisation study is being run against annotated Holter recordings.",
+    },
+    {
+        "statement": "The hospital pilot is committed for 14 March.",
+        "date": "14 March",
+    },
+    {
+        "statement": "The programme budget is $2.4M through the end of the year.",
+        "amount": "$2.4M",
+    },
+]
+
 
 def seed_medguard() -> dict | None:
     """Creates the MedGuard demo project and its four profiles.
@@ -77,7 +135,15 @@ def seed_medguard() -> dict | None:
     project = store.create_project("MedGuard", creator_id=created_profiles[0]["id"])
     for profile in created_profiles[1:]:
         store.add_member(project["id"], profile["id"])
-    return project
+
+    # Authored by the creator, since they're the one who wrote the founding
+    # paragraph these were read out of.
+    creator_id = created_profiles[0]["id"]
+    for content in FOUNDING_ENTRIES:
+        entry = store.create_entry(content, author=creator_id)
+        store.add_entry_to_project(project["id"], entry["id"])
+
+    return store.get_project(project["id"])
 
 
 if __name__ == "__main__":

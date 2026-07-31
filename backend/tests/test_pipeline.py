@@ -30,7 +30,7 @@ def project(client, signed_up):
 @pytest.fixture
 def stub_model(monkeypatch):
     """Replaces every model call with something deterministic."""
-    calls = {"read": 0, "summarize": 0}
+    calls = {"read": 0, "summarize": 0, "welcome": 0, "answer": 0}
 
     def fake_read(text, profile=None, existing=None, model=None):
         calls["read"] += 1
@@ -50,9 +50,21 @@ def stub_model(monkeypatch):
             "segments": [{"text": "A summary.", "source_entry_ids": ids[:1]}],
         }
 
+    def fake_answer(question, entries, profile, model=None):
+        calls["answer"] += 1
+        ids = [entry["id"] for entry in entries]
+        return {"segments": [{"text": "An answer.", "source_entry_ids": ids[:1]}]}
+
+    def fake_welcome(profile, model=None):
+        calls["welcome"] += 1
+        return {"text": "A welcome."}
+
     monkeypatch.setattr(pipeline, "interpret_message", fake_read)
     monkeypatch.setattr(pipeline.reprojection, "summarize", fake_summarize)
+    monkeypatch.setattr(pipeline.reprojection, "answer", fake_answer)
+    monkeypatch.setattr(pipeline.reprojection, "welcome", fake_welcome)
     reprojection._cache.clear()
+    reprojection._welcome_cache.clear()
     return calls
 
 
@@ -99,6 +111,45 @@ def test_question_returns_an_answer(client, project, stub_model):
     assert body["answer"] == "An answer."
     # A question proposes nothing.
     assert body["operations"] == []
+
+
+def test_answers_carry_the_entries_they_drew_on(client, project, stub_model):
+    """An answer is traceable for the same reason the summary is."""
+    entry_ids = merge_a_change(client, project["id"])
+
+    body = client.post(
+        f"/api/projects/{project['id']}/input", json={"text": "what changed?"}
+    ).get_json()
+
+    assert body["answer_segments"][0]["source_entry_ids"] == entry_ids[:1]
+    assert stub_model["answer"] == 1
+
+
+def test_an_answer_may_reason_beyond_the_record(client, project, stub_model):
+    """"Who is this for?" has no recorded answer, and inferring one is the
+    useful reply. Uncited segments survive in an answer — carrying no marker,
+    which is what tells the reader it's inference — but never in a summary."""
+    segments = [
+        {"text": "The record says 2 kHz.", "source_entry_ids": ["real"]},
+        {"text": "So this is probably for outpatients.", "source_entry_ids": []},
+    ]
+
+    answer = reprojection.keep_grounded_segments(
+        segments, {"real"}, require_citation=False
+    )
+    summary = reprojection.keep_grounded_segments(segments, {"real"})
+
+    assert [segment["text"] for segment in answer] == [
+        "The record says 2 kHz.",
+        "So this is probably for outpatients.",
+    ]
+    assert [segment["text"] for segment in summary] == ["The record says 2 kHz."]
+
+
+def test_a_statement_needs_no_answer_call(client, project, stub_model):
+    client.post(f"/api/projects/{project['id']}/input", json={"text": SOURCE})
+
+    assert stub_model["answer"] == 0
 
 
 def test_one_call_covers_both_paths(client, project, stub_model):
@@ -344,11 +395,32 @@ def test_view_returns_grounded_segments(client, project, stub_model):
     assert body["cached"] is False
 
 
-def test_empty_project_needs_no_model_call(client, project, stub_model):
+def test_empty_project_is_welcomed_rather_than_summarized(client, project, stub_model):
+    """Nothing to summarize, but the reader is still someone in particular."""
     body = client.get(f"/api/projects/{project['id']}/view").get_json()
 
     assert body["segments"] == []
+    assert body["welcome"] == "A welcome."
     assert stub_model["summarize"] == 0
+    assert stub_model["welcome"] == 1
+
+
+def test_entry_ids_are_stripped_from_summary_prose(client, project, stub_model):
+    """Ids belong in source_entry_ids. The model inlines them into the text
+    anyway, so they're removed in code rather than asked for in the prompt."""
+    entry_id = "24f65462-b121-4afd-93ba-2f46ae51410d"
+    segments = [
+        {
+            "text": f"The rate ({entry_id}) is fixed, per the filter "
+            f"({entry_id}, {entry_id}).",
+            "source_entry_ids": [entry_id],
+        }
+    ]
+
+    grounded = reprojection.keep_grounded_segments(segments, {entry_id})
+
+    assert grounded[0]["text"] == "The rate is fixed, per the filter."
+    assert grounded[0]["source_entry_ids"] == [entry_id]
 
 
 def test_second_view_is_served_from_cache(client, project, stub_model):

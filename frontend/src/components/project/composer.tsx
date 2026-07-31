@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ArrowUpIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -22,27 +23,32 @@ export function Composer({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+    <form onSubmit={handleSubmit} className="relative">
       <Textarea
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder="Say something, or ask…"
-        rows={3}
+        rows={1}
         disabled={busy}
+        // Enter sends, since most messages are a line. Shift+Enter (and the
+        // usual Cmd/Ctrl+Enter) still break the line for the longer ones.
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            handleSubmit(event)
-          }
+          if (event.key === 'Enter' && !event.shiftKey) handleSubmit(event)
         }}
+        // Starts one line tall, so the placeholder sits centred against the
+        // send button, and grows with what you type (the base textarea already
+        // sets field-sizing-content; min-h-16 is what was forcing four rows).
+        className="max-h-40 min-h-0 resize-none overflow-y-auto py-2.5 pr-12"
       />
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={busy || !text.trim()}>
-          {busy ? 'Thinking…' : 'Send'}
-        </Button>
-        <span className="text-muted-foreground text-xs">
-          A statement becomes a proposed fact; a question just gets answered.
-        </span>
-      </div>
+      <Button
+        type="submit"
+        size="icon-sm"
+        disabled={busy || !text.trim()}
+        className="absolute top-1/2 right-2 -translate-y-1/2"
+        aria-label="Send"
+      >
+        <ArrowUpIcon />
+      </Button>
     </form>
   )
 }

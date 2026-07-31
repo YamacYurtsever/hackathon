@@ -88,6 +88,7 @@ export function PendingRequests({
   isAdmin,
   busy,
   onMerge,
+  onMergeAll,
   onReject,
   onEdit,
 }: {
@@ -98,6 +99,7 @@ export function PendingRequests({
   isAdmin: boolean
   busy: boolean
   onMerge: (requestId: string) => void
+  onMergeAll: () => void
   onReject: (requestId: string) => void
   onEdit: (requestId: string, operation: Operation) => void
 }) {
@@ -121,6 +123,17 @@ export function PendingRequests({
               : 'An admin has to merge these before they become facts.'}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Bootstrapping a project means approving a batch, not adjudicating
+            one fact at a time — the per-request controls stay for when you do
+            want to go through them individually. */}
+        {isAdmin && requests.length > 1 && (
+          <div className="flex justify-end border-b pb-3">
+            <Button size="xs" onClick={onMergeAll} disabled={busy}>
+              Merge all {requests.length}
+            </Button>
+          </div>
+        )}
 
         <div className="flex flex-col">
           {requests.map((request) => (

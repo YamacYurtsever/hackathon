@@ -1,13 +1,16 @@
 import { Button } from '@/components/ui/button'
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import type { Member } from '@/types/ir'
 
 /** Members are reference material, not part of the conversation — they live
- * behind a header button rather than below the feed. */
+ * behind a header button rather than below the feed, in the same centered
+ * dialog the digest and the pending queue use. */
 export function MembersPopover({
   members,
   currentUserId,
@@ -22,15 +25,21 @@ export function MembersPopover({
   onPromote: (userId: string) => void
 }) {
   return (
-    <Popover>
-      <PopoverTrigger
+    <Dialog>
+      <DialogTrigger
         render={
           <Button variant="outline">
             {members.length} {members.length === 1 ? 'member' : 'members'}
           </Button>
         }
       />
-      <PopoverContent align="end" className="w-72">
+      <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {members.length} {members.length === 1 ? 'member' : 'members'}
+          </DialogTitle>
+        </DialogHeader>
+
         <div className="flex flex-col">
           {members.map((member) => (
             <div
@@ -61,7 +70,7 @@ export function MembersPopover({
             </div>
           ))}
         </div>
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
   )
 }
