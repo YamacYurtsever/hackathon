@@ -71,6 +71,24 @@ Keep these three layers distinct in the schema even if the UI blends them:
 - **Backend:** Python + Flask, Vulture (dead code detection)
 - **LLM:** Mistral — core engine for IR extraction and re-projection
 
+## Development Workflow
+
+### Backend (Flask)
+```bash
+cd backend
+source venv/bin/activate
+python app.py
+```
+Runs on http://127.0.0.1:5000. Check it's up with `curl http://127.0.0.1:5000/api/health`.
+
+### Frontend (React + Vite)
+```bash
+cd frontend
+nvm use   # picks up .nvmrc (Node 22.21.0)
+npm run dev
+```
+Runs on http://localhost:5173.
+
 ## Suggested Team Split (5 people, ~24 hrs)
 1. **IR + prompting lead** — designs IR schema, owns extraction & re-projection prompts, grounding checks
 2. **Backend/data** — Flask API, IR storage, amendment/versioning logic
