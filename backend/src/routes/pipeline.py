@@ -1,8 +1,8 @@
 """The read and write paths over a project's IR.
 
 Read: `/view` re-projects the project for you, `/changes` reports what's new.
-Write: `/input` proposes changes and stores nothing, `/requests` persists the
-ones the author accepts — one request per change — and only an admin can apply
+Write: `/input` proposes changes and stores nothing, `/requests` submits the
+ones the author keeps — one request per change — and only an admin can merge
 them. Nothing reaches the IR by any other route.
 """
 
@@ -92,10 +92,10 @@ def project_changes(project_id: str):
 
 @bp.post("/api/projects/<project_id>/requests")
 @login_required
-def create_requests(project_id: str):
-    """The author accepts some proposed changes. Each becomes its own request,
-    so an admin can approve one and reject another rather than being handed a
-    bundle to take or leave."""
+def submit_requests(project_id: str):
+    """The author submits proposed changes for review. Submitting is not
+    approving — nothing reaches the IR until an admin merges it. Each change
+    becomes its own request, so one can be merged and another rejected."""
     project, error = _member_project(project_id)
     if project is None:
         return error
@@ -157,27 +157,27 @@ def edit_request(project_id: str, request_id: str):
     return jsonify(store.update_request_operation(request_id, operation))
 
 
-@bp.post("/api/projects/<project_id>/requests/<request_id>/approve")
+@bp.post("/api/projects/<project_id>/requests/<request_id>/merge")
 @login_required
-def approve_request(project_id: str, request_id: str):
-    """Admin only, no exceptions — this is the only way the IR changes."""
+def merge_request(project_id: str, request_id: str):
+    """Admin only, no exceptions — merging is the only way the IR changes."""
     project, error = _member_project(project_id)
     if project is None:
         return error
     if current_profile()["id"] not in project["admins"]:
-        return jsonify({"error": "only admins can approve requests"}), 403
+        return jsonify({"error": "only admins can merge requests"}), 403
 
     pending = store.get_request(request_id)
     if pending is None or pending["project_id"] != project_id:
         return jsonify({"error": "request not found"}), 404
 
-    entry_id, failure = store.apply_request(request_id)
+    entry_id, failure = store.merge_request(request_id)
     if failure:
         return jsonify({"error": failure}), 409
 
     # Entries changed, so every cached summary of this project is stale.
     reprojection.invalidate_project(project_id)
-    return jsonify({"applied": entry_id})
+    return jsonify({"merged": entry_id})
 
 
 @bp.post("/api/projects/<project_id>/requests/<request_id>/reject")

@@ -14,20 +14,23 @@ import type { IREntry, Operation } from '@/types/ir'
 
 /** Gate 1, as a popup: proposed changes are a decision to make, not something
  * to read past. Each is kept, edited, or dropped on its own — one message often
- * says several things and you shouldn't have to take them as a bundle. */
+ * says several things and you shouldn't have to take them as a bundle.
+ *
+ * Submitting here is not approving: it sends the changes for review, and an
+ * admin still has to merge them before they're facts. */
 export function ChangesetDialog({
   operations,
   dropped,
   entriesById,
   busy,
-  onAccept,
+  onSubmit,
   onDiscard,
 }: {
   operations: Operation[]
   dropped: number
   entriesById: Map<string, IREntry>
   busy: boolean
-  onAccept: (operations: Operation[]) => void
+  onSubmit: (operations: Operation[]) => void
   onDiscard: () => void
 }) {
   const [edited, setEdited] = useState(operations)
@@ -50,7 +53,7 @@ export function ChangesetDialog({
           <DialogTitle>Here's what we understood</DialogTitle>
           <DialogDescription>
             Nothing is recorded yet. Keep the ones you meant, fix any we got
-            wrong, then send them for approval.
+            wrong, then send them for review — an admin still has to merge them.
           </DialogDescription>
         </DialogHeader>
 
@@ -96,8 +99,8 @@ export function ChangesetDialog({
           <Button variant="ghost" onClick={onDiscard} disabled={busy}>
             Discard
           </Button>
-          <Button onClick={() => onAccept(kept)} disabled={busy || !kept.length}>
-            {busy ? 'Sending…' : `Send ${kept.length} for approval`}
+          <Button onClick={() => onSubmit(kept)} disabled={busy || !kept.length}>
+            {busy ? 'Submitting…' : `Submit ${kept.length} for review`}
           </Button>
         </DialogFooter>
       </DialogContent>

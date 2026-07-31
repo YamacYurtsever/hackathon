@@ -109,9 +109,9 @@ export const api = {
 
   listRequests: (id: string) => request<ChangeRequest[]>(`/projects/${id}/requests`),
 
-  // The author accepting our reading — the first point anything is stored.
-  // Each accepted operation becomes its own request.
-  acceptChanges: (id: string, text: string, operations: Operation[]) =>
+  // The author submitting for review — the first point anything is stored.
+  // Submitting is not merging: each change becomes its own pending request.
+  submitChanges: (id: string, text: string, operations: Operation[]) =>
     request<ChangeRequest[]>(`/projects/${id}/requests`, {
       method: 'POST',
       body: JSON.stringify({ text, operations }),
@@ -123,8 +123,9 @@ export const api = {
       body: JSON.stringify({ operation }),
     }),
 
-  approveRequest: (id: string, requestId: string) =>
-    request<{ applied: string }>(`/projects/${id}/requests/${requestId}/approve`, {
+  // The only call that changes the IR.
+  mergeRequest: (id: string, requestId: string) =>
+    request<{ merged: string }>(`/projects/${id}/requests/${requestId}/merge`, {
       method: 'POST',
     }),
 

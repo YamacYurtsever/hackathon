@@ -171,10 +171,10 @@ export function ProjectPage() {
     setProposal(result.operations.length || result.dropped ? result : null)
   }
 
-  async function handleAccept(operations: Operation[]) {
+  async function handleSubmit(operations: Operation[]) {
     if (!projectId || !proposal) return
     const done = await run(() =>
-      api.acceptChanges(projectId, proposal.text, operations),
+      api.submitChanges(projectId, proposal.text, operations),
     )
     if (done) {
       setProposal(null)
@@ -228,9 +228,9 @@ export function ProjectPage() {
               currentUserId={profile?.id ?? ''}
               isAdmin={viewerIsAdmin}
               busy={busy}
-              onApprove={(id) =>
+              onMerge={(id) =>
                 projectId &&
-                run(() => api.approveRequest(projectId, id)).then(refresh)
+                run(() => api.mergeRequest(projectId, id)).then(refresh)
               }
               onReject={(id) =>
                 projectId &&
@@ -335,7 +335,7 @@ export function ProjectPage() {
             dropped={proposal.dropped}
             entriesById={entriesById}
             busy={busy}
-            onAccept={handleAccept}
+            onSubmit={handleSubmit}
             onDiscard={() => setProposal(null)}
           />
         )}

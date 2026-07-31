@@ -158,12 +158,12 @@ Pure backend — no UI yet. Exercised via the API client and curl. Prove the pip
 
 **Write path (the only way the IR changes)**
 
-- [X] `POST /projects/:id/requests` — author accepts proposed changes; **each becomes its own request**, so an admin can approve one and reject another instead of being handed a bundle to take or leave. First point anything is persisted
+- [X] `POST /projects/:id/requests` — author submits proposed changes for review; **each becomes its own request**, so an admin can merge one and reject another instead of being handed a bundle to take or leave. First point anything is persisted
 - [X] `GET /projects/:id/requests` — pending requests for the project
 - [X] `PUT /projects/:id/requests/:rid` — hand-edit a pending request's operation. Allowed for its author and for admins
-- [X] An applied entry's `author` is the original proposer, never the admin who edited it — editing isn't authorship
-- [X] Accepting always creates a request, even when the author is an admin — one path, and the approval step stays demoable
-- [X] `POST /projects/:id/requests/:rid/approve` / `…/reject` — admin only, enforced server-side, no exceptions. One request carries one change, so there's nothing to apply partially
+- [X] A merged entry's `author` is the original proposer, never the admin who merged or edited it — neither is authorship
+- [X] Submitting always creates a request, even when the author is an admin — one path, and the merge step stays demoable
+- [X] `POST /projects/:id/requests/:rid/merge` / `…/reject` — admin only, enforced server-side, no exceptions. Merging is the only write to the IR, and one request carries one change, so there's nothing to apply partially
 - [X] Rejecting deletes the request; a rejected proposal isn't a fact and doesn't belong in history
 - [X] Reject an `update` whose target entry no longer exists rather than silently recreating it
 
@@ -230,7 +230,7 @@ This is the demo in one gesture: read a paragraph written for you, flip, and see
 
 Crucially it can be *both*. *"We settled on 4kHz — does that change what we file?"* is a fact and a question at once; a classifier picking one would silently lose the other half. Nothing is classified, so nothing is misclassified.
 
-### The write path: proposal → author accepts → admin approves
+### The write path: proposed → submitted → merged
 
 A statement doesn't become an entry directly. Reading a message produces **proposed changes** — one message can create a new entry *and* amend existing ones, and often does: *"actually we settled on 4kHz, and that pushes validation another week"* both revises a recorded fact and adds a new one. Each proposal is reviewed on its own, then passes two gates before it lands:
 
@@ -249,17 +249,23 @@ A statement doesn't become an entry directly. Reading a message produces **propo
 │ │ validation +1 week      │ │
 │ │      [edit] [drop]      │ │
 │ └─────────────────────────┘ │
-│    [ send 2 for approval ]  │
+│   [ submit 2 for review ]   │
 └─────────────────────────────┘
-        ↓  author accepts
+        ↓  author submits
   one pending request per change
-        ↓  admin approves each
-      applied to the IR
+        ↓  admin merges each
+        merged into the IR
 ```
 
-**Gate 1 — the author accepts.** Our reading is a guess at what someone meant, so they see it before anyone else does: *"here's what we understood."* Each proposal is kept, edited, or dropped on its own — a message often says several things and you shouldn't have to take them as a bundle. Nothing is stored until they accept, so a misread they discard leaves no trace.
+Three distinct acts, three distinct words — reusing "approve" for two of them hides the fact that the author's decision doesn't put anything in the IR:
 
-**Gate 2 — an admin approves.** Each accepted proposal becomes its own pending request. Only an admin can apply one, and that's not optional. This is the one place the IR can be written, so it's the one place that needs a gate — and because a request carries a single change, an admin can approve one and reject another rather than being handed all-or-nothing.
+- **proposed** — what reading the message produced. Not stored.
+- **submitted** — the author sent it for review. Stored as a pending request, still not a fact.
+- **merged** — an admin applied it. Now it's in the IR.
+
+**Gate 1 — the author submits.** Our reading is a guess at what someone meant, so they see it before anyone else does: *"here's what we understood."* Each proposal is kept, edited, or dropped on its own — a message often says several things and you shouldn't have to take them as a bundle. Nothing is stored until they submit, so a misread they discard leaves no trace. Submitting is *not* approving: it only queues the change for review.
+
+**Gate 2 — an admin merges.** Each submitted change becomes its own pending request. Only an admin can merge one, and that's not optional. This is the one place the IR can be written, so it's the one place that needs a gate — and because a request carries a single change, an admin can merge one and reject another rather than being handed all-or-nothing.
 
 **Both gates allow hand-editing.** At gate 1 the author can correct our reading before submitting; at gate 2 an admin can fix a small error instead of rejecting and making someone retype. Editing means editing the raw `content`, which doubles as the escape hatch when the model misfires during a live demo.
 
@@ -267,8 +273,8 @@ An edited request doesn't reassign authorship: the applied entry's `author` stay
 
 Settled:
 
-- **Always queue.** Even when the author is an admin, their confirmation creates a request they then approve. One path instead of two, and the approval step is demoable without a second account.
-- **No bounce-back.** An admin edit doesn't return to the author for re-confirmation; it applies on approval.
+- **Always queue.** Even when the author is an admin, submitting creates a request they then merge. One path instead of two, and the merge step is demoable without a second account.
+- **No bounce-back.** An admin edit doesn't return to the author for re-confirmation; it lands on merge.
 
 Same facts, two renderings. **Summary** is written for you and nobody else sees it in quite that form. **IR** is the neutral timeline everyone shares, identical for every member: time, author, and the structured fact itself. Flipping between them makes "the IR is the source of truth" something you can *see* rather than something we assert — and it's the natural demo moment: switch profiles, watch the summary change completely, flip to IR and it's byte-identical.
 
@@ -286,10 +292,10 @@ The writing half — getting facts *into* the project and seeing them land. Buil
 - [X] Result is never ambiguous: proposed changes and any answer both shown, and a count of anything the server had to discard rather than losing it silently
 - [X] Feed: chat-style timeline, one row per IR entry — time, author username, the structured fact rendered readably
 - [X] An entry expands to its raw `content` JSON for anyone who wants the unvarnished version
-- [X] Feed refreshes after a change is applied, newest last (it reads as a conversation)
+- [X] Feed refreshes after a change is merged, newest last (it reads as a conversation)
 - [X] Empty state before the first message
 
-**Frontend — confirmation (gate 1)**
+**Frontend — submission (gate 1)**
 
 - [X] Each proposed change previewed on its own — keep, edit, or drop individually before sending; updates shown as a diff of old vs new `content`
 - [X] Each change reads as plain language, with Edit revealing the raw `content` to fix by hand
@@ -297,12 +303,12 @@ The writing half — getting facts *into* the project and seeing them land. Buil
 - [X] Hand-editing is the escape hatch when the model gets it wrong
 - [X] Make it obvious this is *our reading* of what you said, not yet a fact
 
-**Frontend — approval (gate 2)**
+**Frontend — merging (gate 2)**
 
-- [X] Pending-requests list on the project, visible to everyone (transparency), actionable only by admins
-- [X] Approve / reject per request, with the same diff view the author confirmed
-- [X] Admins can hand-edit a request before approving, in the same IR-mode editor the author used
-- [X] Non-admins see their own requests are waiting, so nobody wonders why their fact never landed
+- [X] Pending-requests queue behind a header button, visible to everyone (transparency), actionable only by admins
+- [X] Merge / reject per request, with the same view the author submitted
+- [X] Admins can hand-edit a request before merging, in the same editor the author used
+- [X] Non-admins see their own submissions are waiting, so nobody wonders why their fact never landed
 
 ---
 
@@ -342,7 +348,7 @@ The reading half — the same facts, re-projected through *your* context, plus a
 
 **Backend**
 
-The propose/accept/approve flow is no longer here — it became the core write path in 6 and 7.
+The propose/submit/merge flow is no longer here — it became the core write path in 6 and 7.
 
 - [ ] Meaning-preservation pass: prompt checks a summary segment against the entries it cites, flags drift/invention
 - [ ] Version history: append-only log of `{entry_id, content, author, created_at}` written on every applied update
@@ -352,7 +358,7 @@ The propose/accept/approve flow is no longer here — it became the core write p
 
 - [ ] Version history view
 - [ ] Attribution UI: show `author` on each entry
-- [ ] Request history — who proposed what, who approved it, when
+- [ ] Request history — who proposed what, who merged it, when
 
 ---
 

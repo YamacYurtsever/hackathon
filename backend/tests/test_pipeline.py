@@ -56,8 +56,8 @@ def stub_model(monkeypatch):
     return calls
 
 
-def approve_a_change(client, project_id, operations=None):
-    """Accepts and approves changes, returning the affected entry ids."""
+def merge_a_change(client, project_id, operations=None):
+    """Submits and merges changes, returning the affected entry ids."""
     requests = client.post(
         f"/api/projects/{project_id}/requests",
         json={
@@ -67,8 +67,8 @@ def approve_a_change(client, project_id, operations=None):
     ).get_json()
     return [
         client.post(
-            f"/api/projects/{project_id}/requests/{pending['id']}/approve"
-        ).get_json()["applied"]
+            f"/api/projects/{project_id}/requests/{pending['id']}/merge"
+        ).get_json()["merged"]
         for pending in requests
     ]
 
@@ -89,7 +89,7 @@ def test_statement_proposes_changes_and_stores_nothing(client, project, stub_mod
 
 
 def test_question_returns_an_answer(client, project, stub_model):
-    approve_a_change(client, project["id"])
+    merge_a_change(client, project["id"])
 
     response = client.post(
         f"/api/projects/{project['id']}/input", json={"text": "what changed?"}
@@ -128,20 +128,20 @@ def test_non_member_cannot_use_input(client, project, signed_up, stub_model):
 # --- write path ---
 
 
-def test_accepting_creates_a_pending_request_even_for_an_admin(client, project, stub_model):
+def test_submitting_creates_a_pending_request_even_for_an_admin(client, project, stub_model):
     response = client.post(
         f"/api/projects/{project['id']}/requests",
         json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
     )
 
     assert response.status_code == 201
-    # One path for everyone: being an admin doesn't skip the queue.
+    # Submitting is not merging: being an admin doesn't skip the queue.
     assert len(store.requests_for_project(project["id"])) == 1
     assert store.entries_for_project(project["id"]) == []
 
 
 def test_each_proposed_change_becomes_its_own_request(client, project, stub_model):
-    # So an admin can approve one and reject another, rather than being handed
+    # So an admin can merge one and reject another, rather than being handed
     # a bundle to take or leave.
     created = client.post(
         f"/api/projects/{project['id']}/requests",
@@ -160,7 +160,7 @@ def test_each_proposed_change_becomes_its_own_request(client, project, stub_mode
     assert {p["operation"]["content"]["statement"] for p in pending} == {"First.", "Second."}
 
 
-def test_one_request_can_be_approved_while_another_is_rejected(client, project, stub_model):
+def test_one_request_can_be_merged_while_another_is_rejected(client, project, stub_model):
     first, second = client.post(
         f"/api/projects/{project['id']}/requests",
         json={
@@ -172,7 +172,7 @@ def test_one_request_can_be_approved_while_another_is_rejected(client, project, 
         },
     ).get_json()
 
-    client.post(f"/api/projects/{project['id']}/requests/{first['id']}/approve")
+    client.post(f"/api/projects/{project['id']}/requests/{first['id']}/merge")
     client.post(f"/api/projects/{project['id']}/requests/{second['id']}/reject")
 
     entries = store.entries_for_project(project["id"])
@@ -180,8 +180,8 @@ def test_one_request_can_be_approved_while_another_is_rejected(client, project, 
     assert store.requests_for_project(project["id"]) == []
 
 
-def test_approving_applies_the_changeset_and_clears_the_request(client, project, stub_model):
-    applied = approve_a_change(client, project["id"])
+def test_merging_applies_the_change_and_clears_the_request(client, project, stub_model):
+    applied = merge_a_change(client, project["id"])
 
     entries = store.entries_for_project(project["id"])
     assert [entry["id"] for entry in entries] == applied
@@ -190,7 +190,7 @@ def test_approving_applies_the_changeset_and_clears_the_request(client, project,
 
 
 def test_applied_entry_is_authored_by_the_proposer(client, project, signed_up, stub_model):
-    # Bob proposes; Ada (admin) approves. The fact is Bob's.
+    # Bob submits; Ada (admin) merges. The fact is Bob's.
     client.post("/api/logout")
     bob = signed_up("bob")
     client.post(f"/api/projects/{project['id']}/join")
@@ -201,12 +201,12 @@ def test_applied_entry_is_authored_by_the_proposer(client, project, signed_up, s
 
     client.post("/api/logout")
     client.post("/api/login", json={"username": "ada", "password": "pw"})
-    client.post(f"/api/projects/{project['id']}/requests/{request['id']}/approve")
+    client.post(f"/api/projects/{project['id']}/requests/{request['id']}/merge")
 
     assert store.entries_for_project(project["id"])[0]["author"] == bob["id"]
 
 
-def test_non_admin_cannot_approve(client, project, signed_up, stub_model):
+def test_non_admin_cannot_merge(client, project, signed_up, stub_model):
     client.post("/api/logout")
     signed_up("bob")
     client.post(f"/api/projects/{project['id']}/join")
@@ -216,7 +216,7 @@ def test_non_admin_cannot_approve(client, project, signed_up, stub_model):
     ).get_json()
 
     response = client.post(
-        f"/api/projects/{project['id']}/requests/{request['id']}/approve"
+        f"/api/projects/{project['id']}/requests/{request['id']}/merge"
     )
 
     assert response.status_code == 403
@@ -224,9 +224,9 @@ def test_non_admin_cannot_approve(client, project, signed_up, stub_model):
 
 
 def test_update_operation_revises_in_place(client, project, stub_model):
-    [entry_id] = approve_a_change(client, project["id"])
+    [entry_id] = merge_a_change(client, project["id"])
 
-    applied = approve_a_change(
+    applied = merge_a_change(
         client,
         project["id"],
         [{"op": "update", "target_id": entry_id, "content": content(statement="Now 4 kHz.")}],
@@ -249,7 +249,7 @@ def test_update_targeting_a_vanished_entry_is_refused(client, project, stub_mode
     )
 
     response = client.post(
-        f"/api/projects/{project['id']}/requests/{pending['id']}/approve"
+        f"/api/projects/{project['id']}/requests/{pending['id']}/merge"
     )
 
     assert response.status_code == 409
@@ -336,7 +336,7 @@ def test_stranger_cannot_edit_someone_elses_request(client, project, signed_up, 
 
 
 def test_view_returns_grounded_segments(client, project, stub_model):
-    approve_a_change(client, project["id"])
+    merge_a_change(client, project["id"])
 
     body = client.get(f"/api/projects/{project['id']}/view").get_json()
 
@@ -352,7 +352,7 @@ def test_empty_project_needs_no_model_call(client, project, stub_model):
 
 
 def test_second_view_is_served_from_cache(client, project, stub_model):
-    approve_a_change(client, project["id"])
+    merge_a_change(client, project["id"])
 
     client.get(f"/api/projects/{project['id']}/view")
     second = client.get(f"/api/projects/{project['id']}/view").get_json()
@@ -362,10 +362,10 @@ def test_second_view_is_served_from_cache(client, project, stub_model):
 
 
 def test_a_new_entry_busts_the_cache(client, project, stub_model):
-    approve_a_change(client, project["id"])
+    merge_a_change(client, project["id"])
     client.get(f"/api/projects/{project['id']}/view")
 
-    approve_a_change(client, project["id"])
+    merge_a_change(client, project["id"])
     body = client.get(f"/api/projects/{project['id']}/view").get_json()
 
     assert body["cached"] is False
@@ -373,7 +373,7 @@ def test_a_new_entry_busts_the_cache(client, project, stub_model):
 
 
 def test_editing_your_profile_busts_the_cache(client, project, stub_model):
-    approve_a_change(client, project["id"])
+    merge_a_change(client, project["id"])
     client.get(f"/api/projects/{project['id']}/view")
 
     client.put("/api/profiles/me", json={"content": {"description": "now a lawyer"}})
@@ -386,7 +386,7 @@ def test_editing_your_profile_busts_the_cache(client, project, stub_model):
 
 
 def test_changes_since_filters_by_timestamp(client, project, stub_model):
-    approve_a_change(client, project["id"])
+    merge_a_change(client, project["id"])
     entries = store.entries_for_project(project["id"])
 
     everything = client.get(f"/api/projects/{project['id']}/changes").get_json()
@@ -408,4 +408,4 @@ def test_pipeline_endpoints_require_login(client):
     assert client.get("/api/projects/any/view").status_code == 401
     assert client.get("/api/projects/any/changes").status_code == 401
     assert client.get("/api/projects/any/requests").status_code == 401
-    assert client.post("/api/projects/any/requests/r/approve").status_code == 401
+    assert client.post("/api/projects/any/requests/r/merge").status_code == 401

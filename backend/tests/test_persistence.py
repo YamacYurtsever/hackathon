@@ -92,3 +92,12 @@ def test_seeding_twice_does_not_duplicate(tmp_path):
 
     profile = store.find_profile_by_username(EXAMPLE_PROFILES[0]["username"])
     assert len(store.projects_for_user(profile["id"])) == 1
+
+
+def test_default_db_path_is_the_backend_root():
+    # It's derived from this module's location, so moving store.py between
+    # packages would otherwise relocate everyone's database without a word.
+    import os
+
+    assert os.path.basename(store.DEFAULT_PATH) == "data.db"
+    assert os.path.basename(os.path.dirname(store.DEFAULT_PATH)) == "backend"

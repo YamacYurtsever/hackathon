@@ -12,7 +12,10 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
-DEFAULT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data.db")
+# backend/data.db — anchored to the backend root, not to this file's package, so
+# moving this module doesn't quietly relocate everyone's database.
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DEFAULT_PATH = os.path.join(_BACKEND_ROOT, "data.db")
 
 _path = DEFAULT_PATH
 
@@ -382,12 +385,14 @@ def delete_request(request_id: str) -> None:
         conn.execute("DELETE FROM requests WHERE id = ?", (request_id,))
 
 
-def apply_request(request_id: str) -> tuple[str | None, str | None]:
-    """Applies a request's operation, then deletes it.
+def merge_request(request_id: str) -> tuple[str | None, str | None]:
+    """Merges a request's operation into the IR, then deletes the request.
 
     Returns the affected entry id, or an error message with nothing written —
     an update naming an entry that has since vanished is refused rather than
     silently landing as a create.
+
+    This is the only function that writes to the IR.
     """
     request = get_request(request_id)
     if request is None:
@@ -409,7 +414,7 @@ def apply_request(request_id: str) -> tuple[str | None, str | None]:
                 "UPDATE entries SET content = ?, author = ?, created_at = ? WHERE id = ?",
                 (
                     json.dumps(operation["content"]),
-                    # The proposer, not whichever admin approved or edited it.
+                    # The proposer, not whichever admin merged or edited it.
                     request["author"],
                     _now(),
                     target_id,
