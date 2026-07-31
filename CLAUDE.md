@@ -39,12 +39,15 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 - [ ] NL/IR toggle (summaries and amendments)
 - [ ] "Since you last viewed" digest (local last-viewed timestamp → changes since then)
 - [ ] Every IR change stored with timestamp + author
+- [ ] Project creation view — creator becomes the project's first admin
+- [ ] Admin approval is required for any IR amendment — not optional, no bypass. Admins can promote other members to admin
 
 **Should-have:**
 - [ ] Meaning-preservation check (second pass validates re-projection against IR)
 - [ ] Amendment flow: NL proposal → IR diff → admin approval
 - [ ] Version history view
 - [ ] Attribution UI
+- [ ] Exit a project; if the last admin exits and other members remain, one is auto-promoted so the project never ends up admin-less while it has members
 
 **Stretch:**
 - [ ] Conflict detection between contradictory statements
@@ -63,32 +66,67 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 ## Milestones
 
 ### 1. Foundation
+**Backend**
 - [X] IR entry, profile, and project schemas drafted
-- [X] Repo scaffolded
+- [X] Backend repo scaffolded (Flask, Vulture)
+- [ ] Storage layer for entries/projects/profiles (in-memory or file-based is fine for a 1-day build)
+- [ ] Mistral client wrapper + API key wired via `.env`
+- [ ] Seed script: create the MedGuard project and its four example profiles
+
+**Frontend**
+- [X] Frontend repo scaffolded (Vite + React + shadcn, ESLint)
 
 ### 2. Core Pipeline
-- [ ] NL → IR extraction working
-- [ ] IR → context-specific re-projection working
-- [ ] Full profile content (not just a role label) shapes output
-- [ ] Flask endpoints: create project, post message, fetch re-projected view, fetch changes-since-timestamp
+**Backend**
+- [ ] Extraction prompt: NL message → structured IR `content` JSON
+- [ ] `POST /projects/:id/messages` — NL text + author → runs extraction, creates IR entry, appends id to `project.ir_entry_ids`
+- [ ] Re-projection prompt: IR entry `content` + viewer's profile `content` → claim text + grounding path
+- [ ] `GET /projects/:id/view?user_id=` — re-projects every entry in the project for that user's profile, returns claims
+- [ ] `POST /profiles`, `GET /profiles/:id` — create/fetch a profile
+- [ ] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
+- [ ] `GET /projects/:id/changes?since=` — entries with `created_at` after the given timestamp
+
+**Frontend**
+- [ ] API client wrapper for the endpoints above
+- [ ] Project creation view
 
 ### 3. Wow-Factor
-- [ ] Cross-context effect propagation working
-- [ ] Grounding citations visible in UI — clickable/expandable to show the actual IR entry being cited
-- [ ] Project feed + per-person view rendering
-- [ ] NL/IR toggle on summary view
-- [ ] "Since you last viewed" digest working
+**Backend**
+- [ ] Re-projection prompt explicitly asked to surface implications for the viewer, not just restate the fact
+- [ ] Claims without a grounding path are dropped server-side, never returned as fact
 
-### 4. Depth (time-permitting)
-- [ ] Meaning-preservation check
-- [ ] Amendment + approval flow, with NL/IR toggle on the diff
+**Frontend**
+- [ ] Project feed listing IR entries
+- [ ] Per-person view — pick a profile, fetch `/projects/:id/view` for it
+- [ ] NL/IR toggle on entries and claims
+- [ ] Grounding citation is clickable — expands/pops up the referenced IR entry
+- [ ] "Since you last viewed" — last-viewed timestamp in localStorage per project, digest banner on load
+
+### 4. Depth
+**Backend**
+- [ ] Meaning-preservation pass: prompt checks a claim against its source IR entry, flags drift/invention
+- [ ] Amendment flow: extraction of the proposal + diff against existing entry `content` + apply-on-approval logic
+- [ ] Amendment approval enforced server-side — only a user in `project.admins` can approve/reject, no exceptions
+- [ ] `POST /projects/:id/promote` — an admin promotes another member to admin
+- [ ] `POST /projects/:id/exit` — removes the caller from `users`/`admins`; if they were the last admin and other members remain, auto-promote one of them
+- [ ] Version history: append-only log of `{entry_id, content, author, created_at}` written on every update
+  - Potential recovery to old versions?
+
+**Frontend**
+- [ ] Amendment proposal UI + admin approval UI
+- [ ] Admin management UI: promote a member, exit the project
 - [ ] Version history view
-- [ ] Attribution UI
+- [ ] Attribution UI: show `author` on each entry/claim
 
 ### 5. Integration + Polish
-- [ ] Atlassian API pulling one real data point into IR
-- [ ] UI polish pass
-- [ ] Lint/dead-code pass
+**Backend**
+- [ ] Atlassian API pulling one real data point into an IR entry
+- [ ] Vulture clean
+
+**Frontend**
+- [ ] shadcn component pass for visual consistency
+- [ ] Empty/loading states for feed, view, and changes digest
+- [ ] ESLint clean
 
 ### 6. Demo Prep
 - [ ] Full scripted MedGuard run-through, timed
