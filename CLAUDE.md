@@ -74,7 +74,7 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 
 ### 3. Wow-Factor
 - [ ] Cross-context effect propagation working
-- [ ] Grounding citations visible in UI
+- [ ] Grounding citations visible in UI — clickable/expandable to show the actual IR entry being cited
 - [ ] Project feed + per-person view rendering
 - [ ] NL/IR toggle on summary view
 - [ ] "Since you last viewed" digest working
