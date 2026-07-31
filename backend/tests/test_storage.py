@@ -89,3 +89,53 @@ def test_new_entries_have_version_history(store: JsonStore):
 
     assert len(versions) == 1
     assert versions[0]["content"]["statement"] == "A grounded fact."
+
+
+def test_detected_issues_deduplicate_evidence_and_enforce_assignments(
+    store: JsonStore,
+):
+    for profile_id in ("user_author", "user_reviewer", "user_other"):
+        store.create_profile({"name": profile_id}, profile_id=profile_id)
+    project = store.create_project(
+        "Project",
+        "user_author",
+        member_ids=["user_reviewer", "user_other"],
+    )
+    entries = store.append_entries(
+        project["id"],
+        [
+            {"statement": "The approved rate is 1 kHz."},
+            {"statement": "The implementation uses 2 kHz."},
+        ],
+        "user_author",
+    )
+    conflict = {
+        "title": "Sampling conflict",
+        "summary": "The implementation violates the approved rate.",
+        "conflict_type": "requirement_violation",
+        "required_expertise": "Signal validation",
+        "source_entry_ids": [entry["id"] for entry in entries],
+        "reviewer_ids": ["user_reviewer"],
+        "participant_ids": ["user_author"],
+    }
+
+    created = store.create_detected_issue(
+        project["id"],
+        conflict,
+        "user_author",
+    )
+    duplicate = store.create_detected_issue(
+        project["id"],
+        conflict,
+        "user_author",
+    )
+
+    assert created is not None
+    assert duplicate is None
+    with pytest.raises(PermissionDeniedError):
+        store.create_proposal(
+            project["id"],
+            created["id"],
+            "Unassigned change",
+            "user_other",
+        )

@@ -124,9 +124,77 @@ def create_app(
         ]
         return bundle
 
+    def review_project_change(
+        project_id: str,
+        new_entries: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Run a best-effort grounded conflict review after IR has been saved."""
+        if not new_entries:
+            return {"status": "complete", "created_issue_ids": []}
+        bundle = json_store.get_bundle(project_id)
+        new_ids = {entry["id"] for entry in new_entries}
+        existing_entries = [
+            entry for entry in bundle["entries"] if entry["id"] not in new_ids
+        ]
+        if not existing_entries:
+            return {"status": "complete", "created_issue_ids": []}
+
+        members = [
+            json_store.get_profile(profile_id)
+            for profile_id in bundle["project"]["users"]
+        ]
+        open_issues = [
+            issue
+            for issue in json_store.list_issues(
+                project_id,
+                new_entries[0]["author"],
+            )
+            if issue["status"] == "open"
+        ]
+        try:
+            conflicts = document_service.detect_conflicts(
+                new_entries,
+                existing_entries,
+                members,
+                open_issues,
+            )
+        except (MistralConfigurationError, MistralProcessingError) as error:
+            app.logger.warning("Automatic conflict review skipped: %s", error)
+            return {
+                "status": "skipped",
+                "created_issue_ids": [],
+                "reason": str(error),
+            }
+
+        created_issue_ids = []
+        for conflict in conflicts:
+            try:
+                issue = json_store.create_detected_issue(
+                    project_id,
+                    conflict,
+                    new_entries[0]["author"],
+                )
+            except (ValueError, StoreConflictError) as error:
+                app.logger.warning("Invalid automatic conflict ignored: %s", error)
+                continue
+            if issue is not None:
+                created_issue_ids.append(issue["id"])
+        return {
+            "status": "complete",
+            "created_issue_ids": created_issue_ids,
+        }
+
     def ingest_document(project_id: str | None = None):
         if project_id is not None:
             require_project_member(project_id)
+        previous_entry_ids = (
+            {
+                entry["id"]
+                for entry in json_store.get_bundle(project_id)["entries"]
+            }
+            if project_id is not None
+            else set()
+        )
 
         uploaded_file = request.files.get("file")
         if uploaded_file is None:
@@ -182,6 +250,15 @@ def create_app(
             json_store.get_profile(profile_id)
             for profile_id in bundle["project"]["users"]
         ]
+        new_entries = [
+            entry
+            for entry in bundle["entries"]
+            if entry["id"] not in previous_entry_ids
+        ]
+        bundle["conflict_review"] = review_project_change(
+            bundle["project"]["id"],
+            new_entries,
+        )
         return jsonify(bundle), 201
 
     @app.get("/api/health")
@@ -452,7 +529,7 @@ def create_app(
             return _error("decision must be 'approved' or 'rejected'.", 400)
         if not isinstance(comment, str) or len(comment) > 1200:
             return _error("comment must be 1,200 characters or fewer.", 400)
-        return json_store.review_proposal(
+        issue = json_store.review_proposal(
             project_id,
             issue_id,
             proposal_id,
@@ -460,6 +537,19 @@ def create_app(
             decision=decision,
             comment=comment,
         )
+        conflict_review = {"status": "complete", "created_issue_ids": []}
+        if decision == "approved" and issue.get("resolution_entry_id"):
+            resolution_id = issue["resolution_entry_id"]
+            resolution_entries = [
+                entry
+                for entry in json_store.get_bundle(project_id)["entries"]
+                if entry["id"] == resolution_id
+            ]
+            conflict_review = review_project_change(
+                project_id,
+                resolution_entries,
+            )
+        return {**issue, "conflict_review": conflict_review}
 
     @app.post("/projects/<project_id>/messages")
     @app.post("/api/projects/<project_id>/messages")
@@ -480,7 +570,12 @@ def create_app(
             profile["content"],
         )
         entries = json_store.append_entries(project_id, facts, author_id)
-        return jsonify({"entries": entries}), 201
+        return jsonify(
+            {
+                "entries": entries,
+                "conflict_review": review_project_change(project_id, entries),
+            }
+        ), 201
 
     @app.get("/projects/<project_id>/view")
     @app.get("/api/projects/<project_id>/view")

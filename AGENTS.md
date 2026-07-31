@@ -57,7 +57,7 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 - [X] Backend repo scaffolded (Flask, Vulture)
 - [X] File-backed storage layer for entries/projects/profiles (`backend/storage.py`)
 - [X] Mistral client wrapper + API key wired via `.env` (`backend/mistral_service.py`)
-- [X] Seed script: create the MedGuard project and its four example profiles (`backend/seed.py`, wired into app startup)
+- [X] MedGuard seed: non-destructive startup ensure plus destructive clean-reset CLI for the project and four profiles
 
 **Frontend**
 
@@ -163,6 +163,10 @@ The shell you land in after opening a project from the home view. Member managem
 - [X] Append-only proposal revisions with contributor attribution and stale-base conflict checks
 - [X] Independent assigned-expert review; contributors cannot self-approve
 - [X] Approved solution closes the issue and becomes a grounded IR decision
+- [X] Automatic post-change conflict review for messages, documents, and approved decisions
+- [X] Model-detected issues require exact new/existing IR evidence and high confidence
+- [X] Profile-aware participant/reviewer assignment with enforced reviewer independence
+- [X] Duplicate automatic issues are suppressed by their cited IR evidence
 - [ ] Meaning-preservation pass: prompt checks a claim against its source IR entry, flags drift/invention
 - [ ] Amendment flow: extraction of the proposal + diff against existing entry `content` + apply-on-approval logic
 - [ ] Amendment approval enforced server-side — only a user in `project.admins` can approve/reject, no exceptions
@@ -172,6 +176,7 @@ The shell you land in after opening a project from the home view. Member managem
 **Frontend**
 
 - [X] Issue, solution branch, revision, submit, approve, and reject UI
+- [X] Automatic-conflict status, assignments, and collapsed source-evidence UI
 - [ ] Amendment proposal UI + admin approval UI
 - [ ] Version history view
 - [X] Attribution UI: show `author` on each entry/claim

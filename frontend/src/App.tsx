@@ -105,6 +105,13 @@ type ProjectBundle = {
   documents: DocumentInfo[]
   entries: IREntry[]
   members: Profile[]
+  conflict_review?: ConflictReview
+}
+
+type ConflictReview = {
+  status: 'complete' | 'skipped'
+  created_issue_ids: string[]
+  reason?: string
 }
 
 type Profile = {
@@ -187,6 +194,14 @@ type ProjectIssue = {
   summary: string
   required_expertise: string
   reviewer_ids: string[]
+  participant_ids?: string[]
+  origin?: 'manual' | 'automatic'
+  conflict_type?:
+    | 'contradiction'
+    | 'requirement_violation'
+    | 'decision_mismatch'
+    | 'constraint_violation'
+  source_entry_ids?: string[]
   status: 'open' | 'resolved'
   created_by: string
   created_at: string
@@ -306,6 +321,7 @@ function WorkspacePage() {
   const [updateText, setUpdateText] = useState('')
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [automationNotice, setAutomationNotice] = useState<string | null>(null)
   const [mistralConfigured, setMistralConfigured] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -359,6 +375,7 @@ function WorkspacePage() {
       setError(null)
       setClaims([])
       setChanges([])
+      setAutomationNotice(null)
       try {
         const [result, issueResult] = await Promise.all([
           apiRequest<ProjectBundle>(`/api/projects/${selectedId}`),
@@ -495,6 +512,32 @@ function WorkspacePage() {
     return result
   }
 
+  const applyConflictReview = async (
+    projectId: string,
+    review?: ConflictReview,
+  ) => {
+    if (!review) return
+    if (review.status === 'skipped') {
+      setAutomationNotice(
+        'Change saved. Automatic conflict review is temporarily unavailable.',
+      )
+      return
+    }
+    const count = review.created_issue_ids.length
+    setAutomationNotice(
+      count
+        ? `The model found ${count} direct ${count === 1 ? 'conflict' : 'conflicts'} and opened assigned ${count === 1 ? 'issue' : 'issues'}.`
+        : 'Change saved. The model found no direct conflicts with the project IR.',
+    )
+    if (count) {
+      const issueResult = await apiRequest<{ issues: ProjectIssue[] }>(
+        `/api/projects/${projectId}/issues`,
+      )
+      setIssues(issueResult.issues)
+      setMode('issues')
+    }
+  }
+
   const updateIssue = (issue: ProjectIssue) => {
     setIssues((current) =>
       current.some((item) => item.id === issue.id)
@@ -603,7 +646,9 @@ function WorkspacePage() {
     if (comment === null) return
     setError(null)
     try {
-      const issue = await apiRequest<ProjectIssue>(
+      const issue = await apiRequest<
+        ProjectIssue & { conflict_review?: ConflictReview }
+      >(
         `/api/projects/${bundle.project.id}/issues/${issueId}/proposals/${proposalId}/review`,
         {
           method: 'POST',
@@ -614,6 +659,7 @@ function WorkspacePage() {
       updateIssue(issue)
       if (decision === 'approved') {
         await refreshProject(bundle.project.id)
+        await applyConflictReview(bundle.project.id, issue.conflict_review)
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not review proposal.')
@@ -626,6 +672,7 @@ function WorkspacePage() {
     setError(null)
     setSidebarOpen(false)
     let projectId = bundle?.project.id
+    const conflictReviews: ConflictReview[] = []
     try {
       let result: ProjectBundle | null = null
       for (const file of files) {
@@ -638,6 +685,9 @@ function WorkspacePage() {
           method: 'POST',
           body: formData,
         })
+        if (result.conflict_review) {
+          conflictReviews.push(result.conflict_review)
+        }
         projectId = result.project.id
       }
       if (!result) return
@@ -658,6 +708,18 @@ function WorkspacePage() {
       setSelectedId(result.project.id)
       setMessages([])
       setMode('ir')
+      const createdIssueIds = conflictReviews.flatMap(
+        (review) => review.created_issue_ids,
+      )
+      const mergedReview: ConflictReview = {
+        status:
+          !createdIssueIds.length &&
+          conflictReviews.some((review) => review.status === 'skipped')
+          ? 'skipped'
+          : 'complete',
+        created_issue_ids: createdIssueIds,
+      }
+      await applyConflictReview(result.project.id, mergedReview)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The upload failed.')
       if (projectId) {
@@ -680,7 +742,10 @@ function WorkspacePage() {
     setPosting(true)
     setError(null)
     try {
-      await apiRequest<{ entries: IREntry[] }>(
+      const response = await apiRequest<{
+        entries: IREntry[]
+        conflict_review: ConflictReview
+      }>(
         `/api/projects/${bundle.project.id}/messages`,
         {
           method: 'POST',
@@ -693,6 +758,7 @@ function WorkspacePage() {
       setUpdateText('')
       await refreshProject(bundle.project.id)
       setMode('ir')
+      await applyConflictReview(bundle.project.id, response.conflict_review)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not add that update.')
     } finally {
@@ -1262,6 +1328,17 @@ function WorkspacePage() {
                 </div>
               )}
 
+              {automationNotice && (
+                <div className="automation-banner">
+                  <Sparkles />
+                  <div>
+                    <strong>Automatic conflict review</strong>
+                    <span>{automationNotice}</span>
+                  </div>
+                  <button onClick={() => setAutomationNotice(null)}>Dismiss</button>
+                </div>
+              )}
+
               {mode === 'lens' ? (
                 <>
                   <div className="ir-toolbar">
@@ -1422,6 +1499,7 @@ function WorkspacePage() {
               ) : mode === 'issues' ? (
                 <IssuesView
                   issues={issues}
+                  entries={bundle.entries}
                   actingUserId={actingProfile?.id ?? ''}
                   profileNameFor={profileNameFor}
                   onCreate={() => setShowIssueModal(true)}
@@ -1955,6 +2033,7 @@ function CompactFeedCard({
 
 function IssuesView({
   issues,
+  entries,
   actingUserId,
   profileNameFor,
   onCreate,
@@ -1964,6 +2043,7 @@ function IssuesView({
   onReview,
 }: {
   issues: ProjectIssue[]
+  entries: IREntry[]
   actingUserId: string
   profileNameFor: (id?: string) => string
   onCreate: () => void
@@ -1976,6 +2056,7 @@ function IssuesView({
     decision: 'approved' | 'rejected',
   ) => void
 }) {
+  const entriesById = new Map(entries.map((entry) => [entry.id, entry]))
   return (
     <div className="issues-view">
       <div className="issues-toolbar">
@@ -2001,6 +2082,9 @@ function IssuesView({
         <div className="issue-list">
           {issues.map((issue) => {
             const isReviewer = issue.reviewer_ids.includes(actingUserId)
+            const participants = issue.participant_ids ?? []
+            const isParticipant =
+              !participants.length || participants.includes(actingUserId)
             return (
               <article className="issue-card" key={issue.id}>
                 <div className="issue-head">
@@ -2008,6 +2092,11 @@ function IssuesView({
                     <span className={`issue-status issue-status-${issue.status}`}>
                       {issue.status}
                     </span>
+                    {issue.origin === 'automatic' && (
+                      <span className="issue-auto-status">
+                        <Sparkles /> Model detected
+                      </span>
+                    )}
                     <code>{issue.id.replace('iss_', 'ISS-').toUpperCase()}</code>
                   </div>
                   <span>{formatDate(issue.created_at)}</span>
@@ -2017,12 +2106,45 @@ function IssuesView({
                 <div className="issue-expertise">
                   <ShieldCheck />
                   <span>
-                    Needs <strong>{issue.required_expertise}</strong> · reviewed by{' '}
+                    Needs <strong>{issue.required_expertise}</strong> · reviewer{' '}
                     {issue.reviewer_ids.map(profileNameFor).join(', ')}
                   </span>
                 </div>
+                {!!participants.length && (
+                  <div className="issue-assignment">
+                    <Users />
+                    <span>
+                      Participants: {participants.map(profileNameFor).join(', ')}
+                    </span>
+                  </div>
+                )}
+                {issue.origin === 'automatic' && (
+                  <div className="issue-evidence">
+                    <CircleAlert />
+                    <span>
+                      {issue.conflict_type?.replaceAll('_', ' ')} · grounded in{' '}
+                      {issue.source_entry_ids?.length ?? 0} IR entries
+                    </span>
+                  </div>
+                )}
+                {!!issue.source_entry_ids?.length && (
+                  <details className="issue-source-evidence">
+                    <summary>Review conflict evidence</summary>
+                    {issue.source_entry_ids.map((entryId) => {
+                      const entry = entriesById.get(entryId)
+                      return (
+                        <div key={entryId}>
+                          <code>{entryId}</code>
+                          <p>
+                            {entry?.content.statement ?? 'IR entry is unavailable.'}
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </details>
+                )}
 
-                {issue.status === 'open' && !isReviewer && (
+                {issue.status === 'open' && !isReviewer && isParticipant && (
                   <Button
                     className="issue-propose-button"
                     variant="outline"
@@ -2040,6 +2162,7 @@ function IssuesView({
                     const canRevise =
                       issue.status === 'open' &&
                       !isReviewer &&
+                      isParticipant &&
                       ['draft', 'rejected'].includes(proposal.status)
                     return (
                       <section className="proposal-card" key={proposal.id}>

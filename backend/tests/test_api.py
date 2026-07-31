@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app import create_app
+from mistral_service import MistralProcessingError
 from storage import JsonStore
 
 
@@ -12,6 +13,9 @@ class FakeMistralService:
 
     def __init__(self) -> None:
         self.last_entries = []
+        self.conflict_to_detect = False
+        self.conflict_error = False
+        self.conflict_review_calls = []
 
     def process_document(self, content: bytes, mime_type: str):
         assert content
@@ -89,6 +93,46 @@ class FakeMistralService:
                     }
                 ],
                 "is_implication": True,
+            }
+        ]
+
+    def detect_conflicts(
+        self,
+        new_entries,
+        existing_entries,
+        members,
+        open_issues,
+    ):
+        self.conflict_review_calls.append(
+            {
+                "new_entries": new_entries,
+                "existing_entries": existing_entries,
+                "members": members,
+                "open_issues": open_issues,
+            }
+        )
+        if self.conflict_error:
+            raise MistralProcessingError("Conflict review unavailable.")
+        if not self.conflict_to_detect:
+            return []
+        participant_id = new_entries[0]["author"]
+        reviewer_id = next(
+            member["id"]
+            for member in members
+            if member["id"] != participant_id
+        )
+        return [
+            {
+                "title": "Conflicting sampling requirements",
+                "summary": "The new setting conflicts with the existing baseline.",
+                "conflict_type": "requirement_violation",
+                "required_expertise": "Signal validation",
+                "source_entry_ids": [
+                    existing_entries[-1]["id"],
+                    new_entries[0]["id"],
+                ],
+                "reviewer_ids": [reviewer_id],
+                "participant_ids": [participant_id],
             }
         ]
 
@@ -267,6 +311,94 @@ def test_profiles_projects_messages_views_and_changes(client):
     )
     assert changes_response.status_code == 200
     assert changes_response.get_json()["entries"][0]["id"] == entry["id"]
+
+
+def test_changes_create_grounded_assigned_conflict_issues(client):
+    test_client, service = client
+    creator = signup(test_client)
+    project = test_client.post(
+        "/api/projects",
+        json={"name": "Automatic review"},
+    ).get_json()
+    first_change = test_client.post(
+        f"/api/projects/{project['id']}/messages",
+        json={"text": "The baseline requires a 1 kHz sampling rate."},
+    ).get_json()["entries"][0]
+
+    test_client.post("/api/logout")
+    reviewer = signup(
+        test_client,
+        username="reviewer",
+        name="Signal Reviewer",
+    )
+    test_client.post("/api/logout")
+    test_client.post(
+        "/api/login",
+        json={"username": "maya", "password": "test-password"},
+    )
+    added = test_client.post(
+        f"/api/projects/{project['id']}/members",
+        json={"username": "reviewer"},
+    )
+    assert added.status_code == 200
+
+    service.conflict_to_detect = True
+    changed = test_client.post(
+        f"/api/projects/{project['id']}/messages",
+        json={"text": "The sampling rate was changed to 2 kHz."},
+    )
+    assert changed.status_code == 201
+    payload = changed.get_json()
+    assert payload["conflict_review"]["status"] == "complete"
+    assert len(payload["conflict_review"]["created_issue_ids"]) == 1
+
+    issues = test_client.get(
+        f"/api/projects/{project['id']}/issues",
+    ).get_json()["issues"]
+    automatic_issue = issues[0]
+    assert automatic_issue["origin"] == "automatic"
+    assert automatic_issue["conflict_type"] == "requirement_violation"
+    assert automatic_issue["participant_ids"] == [creator["id"]]
+    assert automatic_issue["reviewer_ids"] == [reviewer["id"]]
+    assert automatic_issue["source_entry_ids"] == [
+        first_change["id"],
+        payload["entries"][0]["id"],
+    ]
+
+    test_client.post("/api/logout")
+    test_client.post(
+        "/api/login",
+        json={"username": "reviewer", "password": "test-password"},
+    )
+    reviewer_cannot_contribute = test_client.post(
+        f"/api/projects/{project['id']}/issues/{automatic_issue['id']}/proposals",
+        json={"solution": "Reviewers must remain independent."},
+    )
+    assert reviewer_cannot_contribute.status_code == 403
+
+
+def test_change_is_preserved_when_automatic_review_is_unavailable(client):
+    test_client, service = client
+    signup(test_client)
+    project = test_client.post(
+        "/api/projects",
+        json={"name": "Resilient review"},
+    ).get_json()
+    test_client.post(
+        f"/api/projects/{project['id']}/messages",
+        json={"text": "The first baseline was recorded."},
+    )
+
+    service.conflict_error = True
+    response = test_client.post(
+        f"/api/projects/{project['id']}/messages",
+        json={"text": "The baseline changed."},
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["conflict_review"]["status"] == "skipped"
+    bundle = test_client.get(f"/api/projects/{project['id']}").get_json()
+    assert len(bundle["entries"]) == 2
 
 
 def test_login_profile_privacy_join_promotion_and_exit(client):

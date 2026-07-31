@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from ir_models import (
+    ConflictBatch,
     ExtractionBatch,
     ExtractedFact,
     GroundedAnswerDraft,
@@ -219,6 +220,201 @@ class MistralDocumentService:
                 }
             )
         return claims
+
+    def detect_conflicts(
+        self,
+        new_entries: list[dict[str, Any]],
+        existing_entries: list[dict[str, Any]],
+        members: list[dict[str, Any]],
+        open_issues: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Find only direct, source-grounded conflicts introduced by a change."""
+        if not new_entries or not existing_entries or len(members) < 2:
+            return []
+
+        client = self._get_client()
+        change_text = json.dumps(
+            [entry.get("content", {}) for entry in new_entries],
+            ensure_ascii=False,
+        )
+        selected_existing = self._select_relevant_entries(
+            change_text,
+            existing_entries,
+            limit=100,
+        )
+        supplied_entries = [*selected_existing, *new_entries]
+        system_prompt = (
+            "Review new project IR entries against the existing IR and return only "
+            "high-confidence direct conflicts. A conflict is a contradiction about "
+            "the same property and conditions, a change that violates an explicit "
+            "requirement or constraint, or a change inconsistent with an accepted "
+            "decision. A downstream impact, new risk, missing work, ambiguity, or "
+            "different scope is not a conflict. Every conflict must cite exact "
+            "supplied entry IDs, including at least one new entry and one existing "
+            "entry. Do not duplicate an open issue with the same evidence. Assign "
+            "participants who own or can implement the conflicting work. Assign one "
+            "or more independent reviewers whose profile explicitly indicates the "
+            "required expertise; reviewers and participants must be different people. "
+            "Describe required_expertise using expertise held by at least one eligible "
+            "independent reviewer, not expertise held only by a participant. "
+            "Use only exact supplied member IDs. Return no conflicts when evidence or "
+            "team expertise is insufficient."
+        )
+        payload = {
+            "new_entry_ids": [entry["id"] for entry in new_entries],
+            "ir_entries": [
+                {
+                    "id": entry["id"],
+                    "author": entry.get("author"),
+                    "content": entry.get("content", {}),
+                }
+                for entry in supplied_entries
+            ],
+            "project_members": [
+                {
+                    "id": member["id"],
+                    "username": member.get("username"),
+                    "profile": member.get("content", {}),
+                }
+                for member in members
+            ],
+            "open_issues": [
+                {
+                    "id": issue["id"],
+                    "title": issue["title"],
+                    "source_entry_ids": issue.get("source_entry_ids", []),
+                }
+                for issue in open_issues
+            ],
+        }
+        try:
+            response = client.chat.parse(
+                model=self.chat_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": json.dumps(payload, ensure_ascii=False),
+                    },
+                ],
+                response_format=ConflictBatch,
+                temperature=0,
+                max_tokens=4000,
+            )
+            batch = self._parsed_response(response, ConflictBatch)
+        except Exception as exc:
+            raise MistralProcessingError(
+                self._api_error_message(exc, "check this change for conflicts")
+            ) from exc
+
+        new_ids = {entry["id"] for entry in new_entries}
+        existing_ids = {entry["id"] for entry in selected_existing}
+        entries_by_id = {entry["id"]: entry for entry in supplied_entries}
+        member_ids = {member["id"] for member in members}
+        open_evidence = {
+            frozenset(issue.get("source_entry_ids", []))
+            for issue in open_issues
+            if issue.get("status") == "open"
+        }
+        seen_evidence: set[frozenset[str]] = set()
+        conflicts = []
+        for draft in batch.conflicts:
+            source_ids = list(dict.fromkeys(draft.conflicting_entry_ids))
+            evidence_key = frozenset(source_ids)
+            if (
+                not evidence_key
+                or not evidence_key <= entries_by_id.keys()
+                or not evidence_key & new_ids
+                or not evidence_key & existing_ids
+                or evidence_key in open_evidence
+                or evidence_key in seen_evidence
+            ):
+                continue
+
+            participants = [
+                user_id
+                for user_id in dict.fromkeys(draft.participant_ids)
+                if user_id in member_ids
+            ]
+            for entry_id in source_ids:
+                author_id = entries_by_id[entry_id].get("author")
+                if author_id in member_ids and author_id not in participants:
+                    participants.append(author_id)
+            reviewers = [
+                user_id
+                for user_id in dict.fromkeys(draft.reviewer_ids)
+                if user_id in member_ids and user_id not in participants
+            ]
+            if not reviewers:
+                reviewers = self._fallback_reviewers(
+                    draft.title,
+                    draft.summary,
+                    draft.required_expertise,
+                    members,
+                    participants,
+                )
+            if not participants or not reviewers:
+                continue
+
+            seen_evidence.add(evidence_key)
+            conflicts.append(
+                {
+                    "title": draft.title.strip(),
+                    "summary": draft.summary.strip(),
+                    "conflict_type": draft.conflict_type,
+                    "required_expertise": draft.required_expertise.strip(),
+                    "source_entry_ids": source_ids,
+                    "reviewer_ids": reviewers,
+                    "participant_ids": participants,
+                }
+            )
+        return conflicts
+
+    @classmethod
+    def _fallback_reviewers(
+        cls,
+        title: str,
+        summary: str,
+        required_expertise: str,
+        members: list[dict[str, Any]],
+        participant_ids: list[str],
+    ) -> list[str]:
+        """Recover from an overlapping model assignment using profile evidence."""
+        ignored_terms = {
+            "change",
+            "conflict",
+            "entry",
+            "existing",
+            "expertise",
+            "project",
+            "requirement",
+            "review",
+            "solution",
+        }
+        query_terms = {
+            term
+            for term in cls._normalise(
+                f"{title} {summary} {required_expertise}"
+            ).split()
+            if len(term) > 3 and term not in ignored_terms
+        }
+        participants = set(participant_ids)
+        ranked = []
+        for member in members:
+            if member["id"] in participants:
+                continue
+            profile_text = json.dumps(
+                member.get("content", {}),
+                ensure_ascii=False,
+            )
+            profile_terms = set(cls._normalise(profile_text).split())
+            score = len(query_terms & profile_terms)
+            if score:
+                ranked.append((score, member["id"]))
+        if not ranked:
+            return []
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        return [ranked[0][1]]
 
     def answer_question(
         self,

@@ -12,6 +12,12 @@ load_dotenv(BASE_DIR / ".env")
 
 MEDGUARD_PROJECT_ID = "prj_medguard"
 MEDGUARD_PASSWORD = "medguard"
+MEDGUARD_MEMBER_IDS = (
+    "user_engineer",
+    "user_biologist",
+    "user_regulatory",
+    "user_business",
+)
 MEDGUARD_PROFILES: dict[str, dict[str, Any]] = {
     "user_engineer": {
         "username": "engineer",
@@ -95,6 +101,20 @@ MEDGUARD_FACTS = [
         },
         "confidence": "medium",
     },
+    {
+        "statement": (
+            "Telemetry upload frequency was changed from once per second to "
+            "once every ten seconds."
+        ),
+        "category": "change",
+        "entities": ["telemetry", "upload frequency", "ten seconds"],
+        "source": {
+            "kind": "message",
+            "page": None,
+            "quote": "changed telemetry uploads from once per second to every ten seconds",
+        },
+        "confidence": "high",
+    },
 ]
 
 
@@ -135,11 +155,7 @@ def seed_medguard(store: JsonStore) -> dict[str, Any]:
             "MedGuard",
             "user_engineer",
             project_id=MEDGUARD_PROJECT_ID,
-            member_ids=[
-                "user_biologist",
-                "user_regulatory",
-                "user_business",
-            ],
+            member_ids=list(MEDGUARD_MEMBER_IDS[1:]),
         )
         store.append_entries(
             project["id"],
@@ -147,6 +163,18 @@ def seed_medguard(store: JsonStore) -> dict[str, Any]:
             "user_engineer",
         )
         project = store.get_project(project["id"])
+
+    # A demo user may have clicked "Exit project". Re-running the seed should
+    # restore access without replacing the project or erasing accumulated IR.
+    for profile_id in MEDGUARD_MEMBER_IDS:
+        if profile_id not in project["users"]:
+            project = store.join_project(MEDGUARD_PROJECT_ID, profile_id)
+    if "user_engineer" not in project["admins"]:
+        project = store.promote_member(
+            MEDGUARD_PROJECT_ID,
+            project["admins"][0],
+            "user_engineer",
+        )
 
     return {
         "project": project,
@@ -157,14 +185,22 @@ def seed_medguard(store: JsonStore) -> dict[str, Any]:
     }
 
 
+def reset_and_seed_medguard(store: JsonStore) -> dict[str, Any]:
+    """Erase all stored demo records, then recreate only MedGuard."""
+    removed_records = store.clear_all_records()
+    result = seed_medguard(store)
+    return {**result, "removed_records": removed_records}
+
+
 def main() -> None:
     store = JsonStore(
         Path(os.environ.get("DATA_DIR", BASE_DIR / "data")),
         BASE_DIR / "schemas",
     )
-    result = seed_medguard(store)
+    result = reset_and_seed_medguard(store)
     print(
-        f"Seeded {result['project']['name']} "
+        f"Reset {result['removed_records']} records and seeded "
+        f"{result['project']['name']} "
         f"({result['project']['id']}) with "
         f"{len(result['profiles'])} profiles."
     )

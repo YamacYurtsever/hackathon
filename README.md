@@ -32,6 +32,13 @@ Git-style reviewed issue solutions, and grounded Ask-the-IR chat. The project
 feed groups atomic IR entries into short source updates; users expand evidence
 only when needed or ask the model for a grounded explanation.
 
+Every new message, added document, and approved solution also receives a
+best-effort conflict review. The model can open an issue only when it cites a
+new IR entry and an incompatible existing entry. It selects participants from
+the people who own the work and independent reviewers whose profiles describe
+the required expertise. If conflict review is unavailable, the primary change
+is preserved and the UI reports that the review was skipped.
+
 ## Run locally
 
 Python 3.10+ and the Node version in `frontend/.nvmrc` are required.
@@ -53,9 +60,23 @@ start Flask:
 python app.py
 ```
 
-The API runs at `http://127.0.0.1:5000`. Startup idempotently seeds MedGuard.
+The API runs at `http://127.0.0.1:5000`. Startup idempotently ensures MedGuard
+exists and restores seeded demo members without deleting other work.
 The demo usernames are `engineer`, `biologist`, `lawyer`, and `business`; each
 uses password `medguard`.
+
+Stop the Flask backend first, then reset the entire file-backed database to a
+clean MedGuard demo:
+
+```bash
+cd backend
+source venv/bin/activate
+python seed.py
+```
+
+**Warning:** the seed CLI deletes every existing project, profile/member, IR
+entry, document, issue, and version before recreating MedGuard. Restarting the
+Flask application does not perform this destructive reset.
 
 ### Frontend
 
@@ -131,6 +152,28 @@ contributor submits the current revision, and only an assigned reviewer who did
 not contribute can approve it. Approval records the solution as a grounded IR
 decision and resolves the issue. Revisions include their base version, so stale
 edits are rejected instead of silently overwriting another member's work.
+
+Automatic issues are deliberately conservative: impacts, risks, missing work,
+and ambiguous wording are not treated as conflicts. Each detected issue stores
+its conflict type, exact IR evidence, assigned participants, and assigned
+reviewers. Duplicate open issues with the same evidence are suppressed.
+
+## Live demo path
+
+Use the seeded MedGuard project so the team profiles and 2 kHz baseline already
+exist. Log in as `business`, open MedGuard, and post:
+
+> Launch configuration is locked to 1 kHz. The device must not ship at 2 kHz.
+
+The automatic review should open an assigned issue and switch to Issues. Expand
+“Review conflict evidence” to show the live 1 kHz/2 kHz grounding. Sign in as an
+assigned participant to propose a revision, submit it, then sign in as the
+reviewer shown on the issue and approve it. Finish in the compact IR feed and
+ask: “What changed, who approved it, and what does it affect?”
+
+For demo resilience, start with the backend and frontend already running, keep
+the four seeded credentials open in separate browser profiles, and record a
+30-second backup of the same flow in case the model API is slow.
 
 ## Verification
 

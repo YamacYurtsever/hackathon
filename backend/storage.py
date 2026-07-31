@@ -33,14 +33,15 @@ class JsonStore:
         self.issues_dir = data_dir / "issues"
         self.versions_dir = data_dir / "versions"
         self._lock = threading.RLock()
-        for directory in (
+        self._record_directories = (
             self.projects_dir,
             self.entries_dir,
             self.profiles_dir,
             self.documents_dir,
             self.issues_dir,
             self.versions_dir,
-        ):
+        )
+        for directory in self._record_directories:
             directory.mkdir(parents=True, exist_ok=True)
 
         self._project_validator = Draft7Validator(
@@ -55,6 +56,17 @@ class JsonStore:
         self._issue_validator = Draft7Validator(
             self._read_json(schema_dir / "issue.schema.json")
         )
+
+    def clear_all_records(self) -> int:
+        """Delete every file-backed record while keeping the data directories."""
+        removed = 0
+        with self._lock:
+            for directory in self._record_directories:
+                for path in directory.iterdir():
+                    if path.is_file():
+                        path.unlink()
+                        removed += 1
+        return removed
 
     def create_profile(
         self,
@@ -540,13 +552,17 @@ class JsonStore:
                     issue
                     for issue in self.list_issues(project_id, caller_id)
                     if issue["status"] == "open"
-                    and user_id in issue["reviewer_ids"]
+                    and user_id
+                    in [
+                        *issue["reviewer_ids"],
+                        *issue.get("participant_ids", []),
+                    ]
                 ),
                 None,
             )
             if assigned_open_issue is not None:
                 raise StoreConflictError(
-                    "Resolve the member's assigned issue reviews before removing them."
+                    "Resolve the member's assigned issue work before removing them."
                 )
             project["users"].remove(user_id)
             if user_id in project["admins"]:
@@ -591,13 +607,17 @@ class JsonStore:
                     issue
                     for issue in self.list_issues(project_id, user_id)
                     if issue["status"] == "open"
-                    and user_id in issue["reviewer_ids"]
+                    and user_id
+                    in [
+                        *issue["reviewer_ids"],
+                        *issue.get("participant_ids", []),
+                    ]
                 ),
                 None,
             )
             if assigned_open_issue is not None:
                 raise StoreConflictError(
-                    "Complete assigned issue reviews before exiting the project."
+                    "Complete assigned issue work before exiting the project."
                 )
             project["users"].remove(user_id)
             if user_id in project["admins"]:
@@ -620,6 +640,10 @@ class JsonStore:
         required_expertise: str,
         reviewer_ids: list[str],
         creator_id: str,
+        participant_ids: list[str] | None = None,
+        origin: str = "manual",
+        conflict_type: str | None = None,
+        source_entry_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         project = self.get_project(project_id)
         if creator_id not in project["users"]:
@@ -635,6 +659,21 @@ class JsonStore:
             )
         if any(reviewer_id not in project["users"] for reviewer_id in reviewers):
             raise ValueError("Every reviewer must be a project member.")
+        participants = list(dict.fromkeys(participant_ids or []))
+        if any(user_id not in project["users"] for user_id in participants):
+            raise ValueError("Every participant must be a project member.")
+        if set(reviewers) & set(participants):
+            raise ValueError("Reviewers must be independent from participants.")
+        if origin not in {"manual", "automatic"}:
+            raise ValueError("Issue origin must be manual or automatic.")
+        evidence_ids = list(dict.fromkeys(source_entry_ids or []))
+        if origin == "automatic":
+            if not conflict_type:
+                raise ValueError("Automatic issues require a conflict type.")
+            if len(evidence_ids) < 2:
+                raise ValueError("Automatic issues require at least two IR sources.")
+            if any(entry_id not in project["ir"] for entry_id in evidence_ids):
+                raise ValueError("Conflict sources must belong to the project IR.")
         issue = {
             "id": f"iss_{uuid.uuid4().hex[:12]}",
             "project_id": project_id,
@@ -642,11 +681,16 @@ class JsonStore:
             "summary": summary.strip(),
             "required_expertise": required_expertise.strip(),
             "reviewer_ids": reviewers,
+            "participant_ids": participants,
+            "origin": origin,
             "status": "open",
             "created_by": creator_id,
             "created_at": self._now(),
             "proposals": [],
         }
+        if origin == "automatic":
+            issue["conflict_type"] = conflict_type
+            issue["source_entry_ids"] = evidence_ids
         self._issue_validator.validate(issue)
         with self._lock:
             self._write_json(
@@ -654,6 +698,34 @@ class JsonStore:
                 issue,
             )
         return issue
+
+    def create_detected_issue(
+        self,
+        project_id: str,
+        conflict: dict[str, Any],
+        creator_id: str,
+    ) -> dict[str, Any] | None:
+        """Create one model-detected issue unless its evidence is already open."""
+        evidence_key = frozenset(conflict["source_entry_ids"])
+        with self._lock:
+            for issue in self.list_issues(project_id, creator_id):
+                if (
+                    issue["status"] == "open"
+                    and frozenset(issue.get("source_entry_ids", [])) == evidence_key
+                ):
+                    return None
+            return self.create_issue(
+                project_id,
+                title=conflict["title"],
+                summary=conflict["summary"],
+                required_expertise=conflict["required_expertise"],
+                reviewer_ids=conflict["reviewer_ids"],
+                participant_ids=conflict["participant_ids"],
+                creator_id=creator_id,
+                origin="automatic",
+                conflict_type=conflict["conflict_type"],
+                source_entry_ids=conflict["source_entry_ids"],
+            )
 
     def list_issues(
         self,
@@ -882,6 +954,11 @@ class JsonStore:
         if user_id in issue["reviewer_ids"]:
             raise PermissionDeniedError(
                 "Assigned reviewers must remain independent from contributors."
+            )
+        participants = issue.get("participant_ids", [])
+        if participants and user_id not in participants:
+            raise PermissionDeniedError(
+                "Only assigned participants can contribute to this issue."
             )
 
     def _require_current_issue_member(

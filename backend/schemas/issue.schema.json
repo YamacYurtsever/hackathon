@@ -27,6 +27,26 @@
       "uniqueItems": true,
       "items": { "type": "string" }
     },
+    "participant_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string" }
+    },
+    "origin": { "enum": ["manual", "automatic"] },
+    "conflict_type": {
+      "enum": [
+        "contradiction",
+        "requirement_violation",
+        "decision_mismatch",
+        "constraint_violation"
+      ]
+    },
+    "source_entry_ids": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": { "type": "string" }
+    },
     "status": { "enum": ["open", "resolved"] },
     "created_by": { "type": "string" },
     "created_at": { "type": "string", "format": "date-time" },
