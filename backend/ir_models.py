@@ -1,17 +1,20 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 class SourceReference(BaseModel):
-    page: int = Field(
+    kind: Literal["document", "message"] = Field(
+        description="Whether the supporting quote came from a document or message.",
+    )
+    page: int | None = Field(
         ge=1,
-        description="One-indexed page number where the fact appears.",
+        description="One-indexed source page, or null for a natural-language message.",
     )
     quote: str = Field(
         min_length=3,
         max_length=500,
-        description="A short verbatim quote from that page supporting the fact.",
+        description="A short verbatim quote from the source supporting the fact.",
     )
 
 
@@ -19,7 +22,7 @@ class ExtractedFact(BaseModel):
     statement: str = Field(
         min_length=3,
         max_length=1200,
-        description="One atomic, neutral fact explicitly supported by the document.",
+        description="One atomic, neutral fact explicitly supported by the input.",
     )
     category: Literal[
         "context",
@@ -40,7 +43,34 @@ class ExtractedFact(BaseModel):
 
 class ExtractionBatch(BaseModel):
     entries: list[ExtractedFact] = Field(
-        description="Atomic facts extracted from the supplied pages.",
+        description="Atomic facts extracted from the supplied input.",
+    )
+
+
+class ClaimDraft(BaseModel):
+    text: str = Field(
+        min_length=3,
+        max_length=1800,
+        description="A useful re-projected claim for the viewer.",
+    )
+    entry_id: str = Field(
+        description="The exact IR entry ID that grounds this claim.",
+    )
+    grounding_paths: list[str] = Field(
+        min_length=1,
+        description=(
+            "Paths within the entry that support the claim, such as "
+            "'content.statement' or 'content.entities'."
+        ),
+    )
+    is_implication: bool = Field(
+        description="True when the claim surfaces an implication for the viewer.",
+    )
+
+
+class ReprojectionBatch(BaseModel):
+    claims: list[ClaimDraft] = Field(
+        description="Grounded claims tailored to the supplied viewer profile.",
     )
 
 
@@ -56,3 +86,14 @@ class GroundedAnswerDraft(BaseModel):
     insufficient_evidence: bool = Field(
         description="True when the IR does not contain enough information to answer.",
     )
+
+
+def read_content_path(entry: dict[str, Any], path: str) -> Any | None:
+    if not path.startswith("content."):
+        return None
+    value: Any = entry
+    for segment in path.split("."):
+        if not isinstance(value, dict) or segment not in value:
+            return None
+        value = value[segment]
+    return value

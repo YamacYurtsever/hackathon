@@ -14,7 +14,12 @@ from mistral_service import (
     MistralDocumentService,
     MistralProcessingError,
 )
-from storage import JsonStore, RecordNotFoundError
+from storage import (
+    JsonStore,
+    PermissionDeniedError,
+    RecordNotFoundError,
+    StoreConflictError,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -107,6 +112,7 @@ def create_app(
             mime_type = mimetypes.guess_type(filename)[0] or guessed_type
 
         result = document_service.process_document(content, mime_type)
+        creator_id = request.form.get("author_id") or None
         bundle = json_store.create_document(
             filename=filename,
             mime_type=mime_type,
@@ -115,12 +121,134 @@ def create_app(
             facts=result["facts"],
             ocr_model=result["ocr_model"],
             chat_model=result["chat_model"],
+            creator_id=creator_id,
         )
         return jsonify(bundle), 201
 
+    @app.get("/profiles")
+    @app.get("/api/profiles")
+    def list_profiles():
+        return {"profiles": json_store.list_profiles()}
+
+    @app.post("/profiles")
+    @app.post("/api/profiles")
+    def create_profile():
+        payload = _json_object()
+        content = payload.get("content")
+        if not isinstance(content, dict) or not content:
+            return _error("Profile content must be a non-empty object.", 400)
+        profile = json_store.create_profile(content)
+        return jsonify(profile), 201
+
+    @app.get("/profiles/<profile_id>")
+    @app.get("/api/profiles/<profile_id>")
+    def get_profile(profile_id: str):
+        return json_store.get_profile(profile_id)
+
+    @app.get("/projects")
+    @app.get("/api/projects")
+    def list_projects():
+        return {"projects": json_store.list_projects()}
+
+    @app.post("/projects")
+    @app.post("/api/projects")
+    def create_project():
+        payload = _json_object()
+        name = payload.get("name")
+        creator_id = payload.get("creator_id")
+        if not isinstance(name, str) or not name.strip():
+            return _error("Project name is required.", 400)
+        if not isinstance(creator_id, str) or not creator_id:
+            return _error("creator_id is required.", 400)
+        project = json_store.create_project(name, creator_id)
+        return jsonify(project), 201
+
+    @app.get("/projects/<project_id>")
     @app.get("/api/projects/<project_id>")
     def get_project(project_id: str):
         return json_store.get_bundle(project_id)
+
+    @app.post("/projects/<project_id>/messages")
+    @app.post("/api/projects/<project_id>/messages")
+    def post_message(project_id: str):
+        payload = _json_object()
+        text = payload.get("text") or payload.get("message")
+        author_id = payload.get("author_id") or payload.get("author")
+        if not isinstance(text, str) or not text.strip():
+            return _error("Message text is required.", 400)
+        if len(text) > 10_000:
+            return _error("Message must be 10,000 characters or fewer.", 400)
+        if not isinstance(author_id, str) or not author_id:
+            return _error("author_id is required.", 400)
+
+        profile = json_store.get_profile(author_id)
+        facts = document_service.extract_message(
+            text.strip(),
+            profile["content"],
+        )
+        entries = json_store.append_entries(project_id, facts, author_id)
+        return jsonify({"entries": entries}), 201
+
+    @app.get("/projects/<project_id>/view")
+    @app.get("/api/projects/<project_id>/view")
+    def get_personalized_view(project_id: str):
+        user_id = request.args.get("user_id", "")
+        if not user_id:
+            return _error("user_id query parameter is required.", 400)
+        bundle = json_store.get_bundle(project_id)
+        if user_id not in bundle["project"]["users"]:
+            raise PermissionDeniedError(
+                "Only project members can request a personalized view."
+            )
+        profile = json_store.get_profile(user_id)
+        claims = document_service.reproject_entries(
+            bundle["entries"],
+            profile["content"],
+        )
+        return {
+            "project_id": project_id,
+            "viewer": profile,
+            "claims": claims,
+        }
+
+    @app.get("/projects/<project_id>/changes")
+    @app.get("/api/projects/<project_id>/changes")
+    def get_changes(project_id: str):
+        since = request.args.get("since", "")
+        if not since:
+            return _error("since query parameter is required.", 400)
+        entries = json_store.get_changes(project_id, since)
+        return {
+            "project_id": project_id,
+            "since": since,
+            "entries": entries,
+        }
+
+    @app.post("/projects/<project_id>/promote")
+    @app.post("/api/projects/<project_id>/promote")
+    def promote_member(project_id: str):
+        payload = _json_object()
+        caller_id = payload.get("caller_id")
+        user_id = payload.get("user_id")
+        if not isinstance(caller_id, str) or not isinstance(user_id, str):
+            return _error("caller_id and user_id are required.", 400)
+        return json_store.promote_member(project_id, caller_id, user_id)
+
+    @app.post("/projects/<project_id>/exit")
+    @app.post("/api/projects/<project_id>/exit")
+    def exit_project(project_id: str):
+        payload = _json_object()
+        user_id = payload.get("user_id")
+        if not isinstance(user_id, str):
+            return _error("user_id is required.", 400)
+        return json_store.exit_project(project_id, user_id)
+
+    @app.get("/api/entries/<entry_id>/versions")
+    def get_entry_versions(entry_id: str):
+        return {
+            "entry_id": entry_id,
+            "versions": json_store.get_versions(entry_id),
+        }
 
     @app.post("/api/projects/<project_id>/questions")
     def ask_project(project_id: str):
@@ -150,7 +278,19 @@ def create_app(
 
     @app.errorhandler(RecordNotFoundError)
     def handle_not_found(_error_value):
-        return _error("That project ID was not found.", 404)
+        return _error("The requested resource was not found.", 404)
+
+    @app.errorhandler(PermissionDeniedError)
+    def handle_permission_error(error):
+        return _error(str(error), 403)
+
+    @app.errorhandler(StoreConflictError)
+    def handle_conflict_error(error):
+        return _error(str(error), 409)
+
+    @app.errorhandler(ValueError)
+    def handle_value_error(error):
+        return _error(str(error), 400)
 
     @app.errorhandler(MistralConfigurationError)
     def handle_configuration_error(error):
@@ -173,6 +313,13 @@ def create_app(
 
 def _error(message: str, status: int):
     return jsonify({"error": message}), status
+
+
+def _json_object() -> dict[str, Any]:
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise ValueError("Request body must be a JSON object.")
+    return payload
 
 
 app = create_app()

@@ -4,6 +4,7 @@ paths = [
   "app.py",
   "ir_models.py",
   "mistral_service.py",
+  "seed.py",
   "storage.py",
   ".vulture_whitelist.py",
 ]

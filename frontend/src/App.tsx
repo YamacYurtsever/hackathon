@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   CircleAlert,
+  Clock3,
   Copy,
   Database,
   FileText,
@@ -11,10 +12,14 @@ import {
   LoaderCircle,
   Menu,
   MessageSquare,
+  Plus,
   Send,
   ShieldCheck,
   Sparkles,
   UploadCloud,
+  UserRound,
+  Users,
+  WandSparkles,
   X,
 } from 'lucide-react'
 import {
@@ -30,7 +35,8 @@ import {
 import { Button } from '@/components/ui/button'
 
 type Source = {
-  page: number
+  kind?: 'document' | 'message'
+  page: number | null
   quote: string
 }
 
@@ -63,9 +69,13 @@ type DocumentInfo = {
   }
 }
 
-type DocumentSummary = DocumentInfo & {
+type ProjectSummary = {
+  id: string
   name: string
   entry_count: number
+  member_count: number
+  created_at: string
+  document: DocumentInfo | null
 }
 
 type ProjectBundle = {
@@ -74,9 +84,41 @@ type ProjectBundle = {
     name: string
     ir: string[]
     users: string[]
+    admins: string[]
+    created_at: string
   }
-  document: DocumentInfo
+  document: DocumentInfo | null
   entries: IREntry[]
+}
+
+type Profile = {
+  id: string
+  content: {
+    name?: string
+    discipline?: string
+    expertise?: string
+    history?: string
+    preferences?: string
+    context?: string
+    system?: boolean
+    [key: string]: unknown
+  }
+}
+
+type Grounding = {
+  entry_id: string
+  path: string
+  value: unknown
+}
+
+type Claim = {
+  id: string
+  text: string
+  entry_id: string
+  grounding: Grounding[]
+  is_implication: boolean
+  author?: string
+  created_at?: string
 }
 
 type Citation = {
@@ -93,6 +135,8 @@ type ChatMessage = {
   citations?: Citation[]
   insufficient?: boolean
 }
+
+type ViewMode = 'lens' | 'ir' | 'raw'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 const ACCEPTED_FILES = '.pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.avif'
@@ -127,32 +171,55 @@ function shortId(value: string) {
 function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
-  const [documents, setDocuments] = useState<DocumentSummary[]>([])
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [profiles, setProfiles] = useState<Profile[]>([])
   const [bundle, setBundle] = useState<ProjectBundle | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [claims, setClaims] = useState<Claim[]>([])
+  const [changes, setChanges] = useState<IREntry[]>([])
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
   const [loadingLibrary, setLoadingLibrary] = useState(true)
   const [loadingProject, setLoadingProject] = useState(false)
+  const [loadingView, setLoadingView] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [posting, setPosting] = useState(false)
   const [asking, setAsking] = useState(false)
   const [dragging, setDragging] = useState(false)
-  const [mode, setMode] = useState<'natural' | 'raw'>('natural')
+  const [mode, setMode] = useState<ViewMode>('ir')
   const [question, setQuestion] = useState('')
+  const [updateText, setUpdateText] = useState('')
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mistralConfigured, setMistralConfigured] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [showProjectModal, setShowProjectModal] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [projectName, setProjectName] = useState('')
+  const [profileName, setProfileName] = useState('')
+  const [profileContext, setProfileContext] = useState('')
+  const [savingModal, setSavingModal] = useState(false)
 
   useEffect(() => {
     const initialise = async () => {
       try {
-        const [library, health] = await Promise.all([
-          apiRequest<{ documents: DocumentSummary[] }>('/api/documents'),
+        const [library, profileList, health] = await Promise.all([
+          apiRequest<{ projects: ProjectSummary[] }>('/api/projects'),
+          apiRequest<{ profiles: Profile[] }>('/api/profiles'),
           apiRequest<{ mistral_configured: boolean }>('/api/health'),
         ])
-        setDocuments(library.documents)
+        setProjects(library.projects)
+        setProfiles(profileList.profiles)
         setMistralConfigured(health.mistral_configured)
-        if (library.documents[0]) setSelectedId(library.documents[0].id)
+        const firstHumanProfile = profileList.profiles.find(
+          (profile) => !profile.content.system,
+        )
+        if (firstHumanProfile) setSelectedProfileId(firstHumanProfile.id)
+        const medGuard =
+          library.projects.find((project) => project.id === 'prj_medguard') ??
+          library.projects[0]
+        if (medGuard) setSelectedId(medGuard.id)
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Could not load projects.')
       } finally {
@@ -170,10 +237,26 @@ function App() {
     const loadProject = async () => {
       setLoadingProject(true)
       setError(null)
+      setClaims([])
+      setChanges([])
       try {
         const result = await apiRequest<ProjectBundle>(`/api/projects/${selectedId}`)
         setBundle(result)
         setMessages([])
+        const viewerId = result.project.users.includes(selectedProfileId)
+          ? selectedProfileId
+          : result.project.users[0] ?? ''
+        setSelectedProfileId(viewerId)
+
+        const storageKey = `relay:last-viewed:${selectedId}`
+        const lastViewed = localStorage.getItem(storageKey)
+        if (lastViewed) {
+          const digest = await apiRequest<{ entries: IREntry[] }>(
+            `/api/projects/${selectedId}/changes?since=${encodeURIComponent(lastViewed)}`,
+          )
+          setChanges(digest.entries)
+        }
+        localStorage.setItem(storageKey, new Date().toISOString())
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Could not load that project.')
       } finally {
@@ -181,18 +264,77 @@ function App() {
       }
     }
     void loadProject()
+    // selectedProfileId is intentionally resolved after loading project membership.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
+
+  useEffect(() => {
+    if (!bundle || mode !== 'lens' || !selectedProfileId) return
+    const loadView = async () => {
+      setLoadingView(true)
+      setError(null)
+      try {
+        const view = await apiRequest<{ claims: Claim[] }>(
+          `/api/projects/${bundle.project.id}/view?user_id=${encodeURIComponent(
+            selectedProfileId,
+          )}`,
+        )
+        setClaims(view.claims)
+      } catch (caught) {
+        setClaims([])
+        setError(
+          caught instanceof Error ? caught.message : 'Could not generate that view.',
+        )
+      } finally {
+        setLoadingView(false)
+      }
+    }
+    void loadView()
+  }, [bundle, mode, selectedProfileId])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, asking])
 
-  const categories = useMemo(() => {
-    if (!bundle) return []
-    return Array.from(
-      new Set(bundle.entries.map((entry) => entry.content.category).filter(Boolean)),
+  const profileById = useMemo(
+    () => new Map(profiles.map((profile) => [profile.id, profile])),
+    [profiles],
+  )
+  const projectProfiles = useMemo(
+    () =>
+      (bundle?.project.users ?? [])
+        .map((id) => profileById.get(id))
+        .filter((profile): profile is Profile => Boolean(profile)),
+    [bundle, profileById],
+  )
+  const selectedProfile = profileById.get(selectedProfileId)
+  const categories = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (bundle?.entries ?? [])
+            .map((entry) => entry.content.category)
+            .filter(Boolean),
+        ),
+      ),
+    [bundle],
+  )
+
+  const profileNameFor = (id?: string) =>
+    (id && profileById.get(id)?.content.name) || id || 'Unknown'
+
+  const refreshProject = async (projectId: string) => {
+    const result = await apiRequest<ProjectBundle>(`/api/projects/${projectId}`)
+    setBundle(result)
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === projectId
+          ? { ...project, entry_count: result.entries.length }
+          : project,
+      ),
     )
-  }, [bundle])
+    return result
+  }
 
   const uploadFile = async (file?: File) => {
     if (!file) return
@@ -201,19 +343,23 @@ function App() {
     setSidebarOpen(false)
     const formData = new FormData()
     formData.append('file', file)
+    if (selectedProfileId) formData.append('author_id', selectedProfileId)
     try {
       const result = await apiRequest<ProjectBundle>('/api/documents', {
         method: 'POST',
         body: formData,
       })
-      const summary: DocumentSummary = {
-        ...result.document,
+      const summary: ProjectSummary = {
+        id: result.project.id,
         name: result.project.name,
         entry_count: result.entries.length,
+        member_count: result.project.users.length,
+        created_at: result.project.created_at,
+        document: result.document,
       }
-      setDocuments((current) => [
+      setProjects((current) => [
         summary,
-        ...current.filter((document) => document.id !== summary.id),
+        ...current.filter((project) => project.id !== summary.id),
       ])
       setBundle(result)
       setSelectedId(result.project.id)
@@ -226,39 +372,104 @@ function App() {
     }
   }
 
-  const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    void uploadFile(event.target.files?.[0])
-  }
-
-  const onDrop = (event: DragEvent<HTMLElement>) => {
+  const postUpdate = async (event: FormEvent) => {
     event.preventDefault()
-    setDragging(false)
-    void uploadFile(event.dataTransfer.files[0])
+    if (!bundle || !selectedProfileId || !updateText.trim() || posting) return
+    setPosting(true)
+    setError(null)
+    try {
+      await apiRequest<{ entries: IREntry[] }>(
+        `/api/projects/${bundle.project.id}/messages`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: updateText.trim(),
+            author_id: selectedProfileId,
+          }),
+        },
+      )
+      setUpdateText('')
+      await refreshProject(bundle.project.id)
+      setMode('ir')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not add that update.')
+    } finally {
+      setPosting(false)
+    }
   }
 
-  const copyProjectId = async () => {
-    if (!bundle) return
-    await navigator.clipboard.writeText(bundle.project.id)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1600)
+  const createProject = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!projectName.trim() || !selectedProfileId) return
+    setSavingModal(true)
+    try {
+      const project = await apiRequest<ProjectBundle['project']>('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: projectName.trim(),
+          creator_id: selectedProfileId,
+        }),
+      })
+      const summary: ProjectSummary = {
+        id: project.id,
+        name: project.name,
+        entry_count: 0,
+        member_count: 1,
+        created_at: project.created_at,
+        document: null,
+      }
+      setProjects((current) => [summary, ...current])
+      setProjectName('')
+      setShowProjectModal(false)
+      setSelectedId(project.id)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not create project.')
+    } finally {
+      setSavingModal(false)
+    }
   }
 
-  const askQuestion = async (event?: FormEvent, suggestedQuestion?: string) => {
+  const createProfile = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!profileName.trim() || !profileContext.trim()) return
+    setSavingModal(true)
+    try {
+      const profile = await apiRequest<Profile>('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: {
+            name: profileName.trim(),
+            context: profileContext.trim(),
+          },
+        }),
+      })
+      setProfiles((current) => [...current, profile])
+      if (!bundle) setSelectedProfileId(profile.id)
+      setProfileName('')
+      setProfileContext('')
+      setShowProfileModal(false)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not create profile.')
+    } finally {
+      setSavingModal(false)
+    }
+  }
+
+  const askQuestion = async (event?: FormEvent, suggestion?: string) => {
     event?.preventDefault()
-    const nextQuestion = (suggestedQuestion ?? question).trim()
+    const nextQuestion = (suggestion ?? question).trim()
     if (!nextQuestion || !bundle || asking) return
-
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content: nextQuestion,
     }
-    const nextMessages = [...messages, userMessage]
-    setMessages(nextMessages)
+    setMessages((current) => [...current, userMessage])
     setQuestion('')
     setAsking(true)
-    setError(null)
-
     try {
       const response = await apiRequest<{
         answer: string
@@ -289,9 +500,7 @@ function App() {
           id: crypto.randomUUID(),
           role: 'assistant',
           content:
-            caught instanceof Error
-              ? caught.message
-              : 'I could not answer that question.',
+            caught instanceof Error ? caught.message : 'I could not answer that.',
           insufficient: true,
         },
       ])
@@ -300,9 +509,27 @@ function App() {
     }
   }
 
-  const selectDocument = (id: string) => {
+  const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    void uploadFile(event.target.files?.[0])
+  }
+
+  const onDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    setDragging(false)
+    void uploadFile(event.dataTransfer.files[0])
+  }
+
+  const copyProjectId = async () => {
+    if (!bundle) return
+    await navigator.clipboard.writeText(bundle.project.id)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
+
+  const selectProject = (id: string) => {
     setSelectedId(id)
     setSidebarOpen(false)
+    setMode('ir')
   }
 
   return (
@@ -327,12 +554,12 @@ function App() {
         <div className="topbar-center">
           <span className="breadcrumb-muted">Workspace</span>
           <ChevronRight />
-          <span>{bundle?.project.name ?? 'Document intelligence'}</span>
+          <span>{bundle?.project.name ?? 'Context translator'}</span>
         </div>
         <div
           className={`api-status ${mistralConfigured ? '' : 'api-status-warning'}`}
           title={
-          mistralConfigured
+            mistralConfigured
               ? 'Mistral API key is configured'
               : 'Add MISTRAL_API_KEY to the backend'
           }
@@ -352,10 +579,10 @@ function App() {
           </div>
           <div className="sidebar-header">
             <div>
-              <p className="eyebrow">Your workspace</p>
+              <p className="eyebrow">Shared workspace</p>
               <h2>Projects</h2>
             </div>
-            <span className="count-badge">{documents.length}</span>
+            <span className="count-badge">{projects.length}</span>
           </div>
 
           <input
@@ -365,17 +592,26 @@ function App() {
             hidden
             onChange={onFileChange}
           />
-          <button
-            className="upload-button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || !mistralConfigured}
-          >
-            {uploading ? <LoaderCircle className="spin" /> : <UploadCloud />}
-            <span>
-              <strong>{uploading ? 'Building IR…' : 'Add document'}</strong>
-              <small>PDF, DOCX, PPTX or image</small>
-            </span>
-          </button>
+          <div className="sidebar-actions">
+            <button
+              className="new-project-button"
+              onClick={() =>
+                profiles.length ? setShowProjectModal(true) : setShowProfileModal(true)
+              }
+            >
+              <Plus />
+              New project
+            </button>
+            <button
+              className="icon-upload-button"
+              aria-label="Import document"
+              title="Import a document"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || !mistralConfigured}
+            >
+              {uploading ? <LoaderCircle className="spin" /> : <UploadCloud />}
+            </button>
+          </div>
 
           <div className="document-list">
             {loadingLibrary ? (
@@ -384,21 +620,21 @@ function App() {
                 <div className="document-skeleton" />
               </>
             ) : (
-              documents.map((document) => (
+              projects.map((project) => (
                 <button
-                  key={document.id}
+                  key={project.id}
                   className={`document-item ${
-                    selectedId === document.id ? 'document-item-active' : ''
+                    selectedId === project.id ? 'document-item-active' : ''
                   }`}
-                  onClick={() => selectDocument(document.id)}
+                  onClick={() => selectProject(project.id)}
                 >
                   <span className="document-icon">
-                    <FileText />
+                    {project.document ? <FileText /> : <Users />}
                   </span>
                   <span className="document-copy">
-                    <strong>{document.name}</strong>
+                    <strong>{project.name}</strong>
                     <small>
-                      {document.entry_count} entries · {formatDate(document.created_at)}
+                      {project.entry_count} entries · {project.member_count} members
                     </small>
                   </span>
                   <ChevronRight className="document-arrow" />
@@ -407,11 +643,22 @@ function App() {
             )}
           </div>
 
+          <button className="profile-card" onClick={() => setShowProfileModal(true)}>
+            <span>
+              <UserRound />
+            </span>
+            <div>
+              <small>Working as</small>
+              <strong>{selectedProfile?.content.name ?? 'Create a profile'}</strong>
+            </div>
+            <Plus />
+          </button>
+
           <div className="sidebar-note">
             <ShieldCheck />
             <div>
               <strong>Grounded by design</strong>
-              <p>Every answer links back to an IR entry and source page.</p>
+              <p>Every personalized claim links to an exact IR field.</p>
             </div>
           </div>
         </aside>
@@ -443,7 +690,6 @@ function App() {
               <span>Mistral will read, structure, and ground the document</span>
             </div>
           )}
-
           {error && (
             <div className="error-banner">
               <CircleAlert />
@@ -463,22 +709,29 @@ function App() {
               <div className="project-head">
                 <div className="project-title-row">
                   <div className="project-file-icon">
-                    <FileText />
+                    {bundle.document ? <FileText /> : <Users />}
                   </div>
                   <div>
                     <div className="project-kicker">
-                      <span>Document IR</span>
+                      <span>{bundle.document ? 'Imported project' : 'Shared project'}</span>
                       <span className="verified-pill">
-                        <ShieldCheck /> Source grounded
+                        <ShieldCheck /> Grounded IR
                       </span>
                     </div>
                     <h1>{bundle.project.name}</h1>
                     <div className="project-meta">
-                      <span>{bundle.document.page_count} pages</span>
-                      <i />
                       <span>{bundle.entries.length} atomic entries</span>
                       <i />
-                      <span>{formatBytes(bundle.document.size_bytes)}</span>
+                      <span>{bundle.project.users.length} members</span>
+                      {bundle.document && (
+                        <>
+                          <i />
+                          <span>
+                            {bundle.document.page_count} pages ·{' '}
+                            {formatBytes(bundle.document.size_bytes)}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -489,88 +742,231 @@ function App() {
                     <span>{bundle.project.id}</span>
                     {copied ? <Check /> : <Copy />}
                   </button>
+                  <select
+                    className="profile-select"
+                    value={selectedProfileId}
+                    onChange={(event) => setSelectedProfileId(event.target.value)}
+                  >
+                    {projectProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.content.name ?? profile.id}
+                      </option>
+                    ))}
+                  </select>
                   <div className="view-toggle">
                     <button
-                      className={mode === 'natural' ? 'active' : ''}
-                      onClick={() => setMode('natural')}
+                      className={mode === 'lens' ? 'active' : ''}
+                      onClick={() => setMode('lens')}
+                      disabled={!selectedProfileId}
                     >
-                      <BookOpen /> Natural
+                      <WandSparkles /> My lens
+                    </button>
+                    <button
+                      className={mode === 'ir' ? 'active' : ''}
+                      onClick={() => setMode('ir')}
+                    >
+                      <BookOpen /> IR
                     </button>
                     <button
                       className={mode === 'raw' ? 'active' : ''}
                       onClick={() => setMode('raw')}
                     >
-                      <Braces /> Raw IR
+                      <Braces /> Raw
                     </button>
                   </div>
                 </div>
               </div>
 
-              <div className="ir-toolbar">
-                <div>
-                  <Database />
-                  <span>Intermediate representation</span>
-                  <span className="entry-count">{bundle.entries.length}</span>
-                </div>
-                <div className="category-row">
-                  {categories.slice(0, 4).map((category) => (
-                    <span key={category}>{category}</span>
-                  ))}
-                </div>
-              </div>
-
-              {mode === 'natural' ? (
-                <div className="entry-list">
-                  {bundle.entries.map((entry, index) => (
-                    <article className="entry-card" key={entry.id}>
-                      <div className="entry-index">{String(index + 1).padStart(2, '0')}</div>
-                      <div className="entry-body">
-                        <div className="entry-topline">
-                          <span
-                            className={`category category-${entry.content.category ?? 'context'}`}
-                          >
-                            {entry.content.category ?? 'fact'}
-                          </span>
-                          <code>{shortId(entry.id)}</code>
-                          <span className="confidence">
-                            <i /> {entry.content.confidence ?? 'grounded'}
-                          </span>
-                        </div>
-                        <p className="statement">
-                          {entry.content.statement ?? JSON.stringify(entry.content)}
-                        </p>
-                        {!!entry.content.entities?.length && (
-                          <div className="entity-row">
-                            {entry.content.entities.map((entity) => (
-                              <span key={entity}>{entity}</span>
-                            ))}
-                          </div>
-                        )}
-                        {entry.content.source && (
-                          <div className="source-block">
-                            <div className="source-label">
-                              <ShieldCheck />
-                              Source · Page {entry.content.source.page}
-                            </div>
-                            <blockquote>“{entry.content.source.quote}”</blockquote>
-                          </div>
-                        )}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="raw-panel">
-                  <div className="raw-header">
-                    <span>project.ir.json</span>
-                    <span>Schema validated</span>
+              {changes.length > 0 && (
+                <div className="changes-banner">
+                  <Clock3 />
+                  <div>
+                    <strong>Since you last viewed</strong>
+                    <span>
+                      {changes.length} new IR {changes.length === 1 ? 'entry' : 'entries'}{' '}
+                      added: {changes
+                        .slice(0, 2)
+                        .map((entry) => entry.content.statement)
+                        .filter(Boolean)
+                        .join(' · ')}
+                      {changes.length > 2 ? ' · …' : ''}
+                    </span>
                   </div>
-                  <pre>{JSON.stringify(bundle.entries, null, 2)}</pre>
+                  <button onClick={() => setChanges([])}>Dismiss</button>
                 </div>
+              )}
+
+              {mode === 'lens' ? (
+                <>
+                  <div className="ir-toolbar">
+                    <div>
+                      <WandSparkles />
+                      <span>
+                        Re-projected for{' '}
+                        {selectedProfile?.content.name ?? selectedProfileId}
+                      </span>
+                      <span className="entry-count">{claims.length}</span>
+                    </div>
+                    <span className="lens-context">
+                      {selectedProfile?.content.discipline ??
+                        selectedProfile?.content.context ??
+                        'Personal context'}
+                    </span>
+                  </div>
+                  {loadingView ? (
+                    <div className="claim-loading">
+                      <LoaderCircle className="spin" />
+                      Re-projecting the IR through this profile…
+                    </div>
+                  ) : claims.length ? (
+                    <div className="entry-list">
+                      {claims.map((claim, index) => {
+                        const sourceEntry = bundle.entries.find(
+                          (entry) => entry.id === claim.entry_id,
+                        )
+                        return (
+                          <article className="claim-card" key={claim.id}>
+                            <div className="claim-number">
+                              {String(index + 1).padStart(2, '0')}
+                            </div>
+                            <div className="claim-body">
+                              <div className="entry-topline">
+                                <span
+                                  className={`category ${
+                                    claim.is_implication
+                                      ? 'category-implication'
+                                      : 'category-context'
+                                  }`}
+                                >
+                                  {claim.is_implication ? 'Implication' : 'Re-projection'}
+                                </span>
+                                <span className="claim-author">
+                                  For {selectedProfile?.content.name ?? 'viewer'}
+                                </span>
+                              </div>
+                              <p className="claim-text">{claim.text}</p>
+                              <div className="grounding-row">
+                                {claim.grounding.map((ground) => (
+                                  <button
+                                    key={`${claim.id}-${ground.path}`}
+                                    onClick={() =>
+                                      setExpandedEntryId((current) =>
+                                        current === claim.entry_id
+                                          ? null
+                                          : claim.entry_id,
+                                      )
+                                    }
+                                  >
+                                    <ShieldCheck />
+                                    {shortId(ground.entry_id)} · {ground.path}
+                                  </button>
+                                ))}
+                              </div>
+                              {expandedEntryId === claim.entry_id && sourceEntry && (
+                                <div className="grounding-detail">
+                                  <strong>Referenced IR entry</strong>
+                                  <p>{sourceEntry.content.statement}</p>
+                                  <code>{JSON.stringify(sourceEntry.content, null, 2)}</code>
+                                </div>
+                              )}
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="feed-empty">
+                      <WandSparkles />
+                      <h3>No grounded claims returned</h3>
+                      <p>
+                        Add an update to the project or choose another profile lens.
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : mode === 'ir' ? (
+                <>
+                  <form className="update-composer" onSubmit={postUpdate}>
+                    <div className="composer-avatar">
+                      {(selectedProfile?.content.name ?? '?').slice(0, 1)}
+                    </div>
+                    <div className="composer-main">
+                      <div className="composer-label">
+                        <strong>{selectedProfile?.content.name ?? 'Project member'}</strong>
+                        <span>Share an update in your own language</span>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={updateText}
+                        disabled={!selectedProfileId || posting || !mistralConfigured}
+                        placeholder="What changed, what was decided, or what should the team know?"
+                        onChange={(event) => setUpdateText(event.target.value)}
+                      />
+                      <div className="composer-footer">
+                        <span>
+                          <Sparkles /> Mistral extracts neutral, atomic facts
+                        </span>
+                        <Button type="submit" disabled={!updateText.trim() || posting}>
+                          {posting ? <LoaderCircle className="spin" /> : <Send />}
+                          Add to IR
+                        </Button>
+                      </div>
+                    </div>
+                  </form>
+                  <div className="ir-toolbar">
+                    <div>
+                      <Database />
+                      <span>Project feed · Intermediate representation</span>
+                      <span className="entry-count">{bundle.entries.length}</span>
+                    </div>
+                    <div className="category-row">
+                      {categories.slice(0, 4).map((category) => (
+                        <span key={category}>{category}</span>
+                      ))}
+                    </div>
+                  </div>
+                  {bundle.entries.length ? (
+                    <div className="entry-list">
+                      {bundle.entries.map((entry, index) => (
+                        <IREntryCard
+                          key={entry.id}
+                          entry={entry}
+                          index={index}
+                          authorName={profileNameFor(entry.author)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="feed-empty">
+                      <MessageSquare />
+                      <h3>No project updates yet</h3>
+                      <p>Share the first update above to create the project’s IR.</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="ir-toolbar">
+                    <div>
+                      <Braces />
+                      <span>Raw Intermediate Representation</span>
+                    </div>
+                  </div>
+                  <div className="raw-panel">
+                    <div className="raw-header">
+                      <span>project.ir.json</span>
+                      <span>Schema validated</span>
+                    </div>
+                    <pre>{JSON.stringify(bundle.entries, null, 2)}</pre>
+                  </div>
+                </>
               )}
             </>
           ) : (
             <EmptyState
+              onCreate={() =>
+                profiles.length ? setShowProjectModal(true) : setShowProfileModal(true)
+              }
               onUpload={() => fileInputRef.current?.click()}
               configured={mistralConfigured}
             />
@@ -602,7 +998,7 @@ function App() {
                   <MessageSquare />
                 </div>
                 <h3>Your IR, conversationally</h3>
-                <p>Upload or select a document to ask grounded questions.</p>
+                <p>Create or select a project to ask grounded questions.</p>
               </div>
             ) : messages.length === 0 ? (
               <div className="chat-welcome">
@@ -611,14 +1007,14 @@ function App() {
                 </div>
                 <div className="assistant-intro">
                   <p>
-                    I’m ready to answer questions about <strong>{bundle.project.name}</strong>.
-                    Every factual answer will include its supporting IR entries.
+                    Ask about <strong>{bundle.project.name}</strong>. Every factual
+                    answer includes its supporting IR entries.
                   </p>
                 </div>
                 <div className="suggestions">
                   <span>Try asking</span>
                   {[
-                    'What are the key requirements?',
+                    'What changed most recently?',
                     'What decisions were made?',
                     'List the risks and constraints.',
                   ].map((suggestion) => (
@@ -649,7 +1045,10 @@ function App() {
                           <button
                             key={citation.entry_id}
                             title={citation.quote}
-                            onClick={() => setMode('natural')}
+                            onClick={() => {
+                              setMode('ir')
+                              setExpandedEntryId(citation.entry_id)
+                            }}
                           >
                             <ShieldCheck />
                             {shortId(citation.entry_id)}
@@ -689,7 +1088,7 @@ function App() {
                 rows={1}
                 value={question}
                 disabled={!bundle || asking}
-                placeholder={bundle ? 'Ask about this project…' : 'Select a project to ask…'}
+                placeholder={bundle ? 'Ask about this project…' : 'Select a project…'}
                 onChange={(event) => setQuestion(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
@@ -713,14 +1112,155 @@ function App() {
           </form>
         </aside>
       </main>
+
+      {showProjectModal && (
+        <Modal title="Create a project" onClose={() => setShowProjectModal(false)}>
+          <form className="modal-form" onSubmit={createProject}>
+            <label>
+              Project name
+              <input
+                autoFocus
+                value={projectName}
+                placeholder="e.g. MedGuard"
+                onChange={(event) => setProjectName(event.target.value)}
+              />
+            </label>
+            <label>
+              Creator profile
+              <select
+                value={selectedProfileId}
+                onChange={(event) => setSelectedProfileId(event.target.value)}
+              >
+                {profiles
+                  .filter((profile) => !profile.content.system)
+                  .map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.content.name ?? profile.id}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <p>The creator becomes the project’s first member and administrator.</p>
+            <div className="modal-actions">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowProjectModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!projectName.trim() || savingModal}>
+                {savingModal && <LoaderCircle className="spin" />}
+                Create project
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showProfileModal && (
+        <Modal title="Create your context profile" onClose={() => setShowProfileModal(false)}>
+          <form className="modal-form" onSubmit={createProfile}>
+            <label>
+              Your name
+              <input
+                autoFocus
+                value={profileName}
+                placeholder="e.g. Maya Chen"
+                onChange={(event) => setProfileName(event.target.value)}
+              />
+            </label>
+            <label>
+              Your context
+              <textarea
+                rows={5}
+                value={profileContext}
+                placeholder="Describe your expertise, responsibilities, project history, and how you prefer information framed…"
+                onChange={(event) => setProfileContext(event.target.value)}
+              />
+            </label>
+            <p>No fixed roles—the model uses exactly the context you choose to share.</p>
+            <div className="modal-actions">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowProfileModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={!profileName.trim() || !profileContext.trim() || savingModal}
+              >
+                {savingModal && <LoaderCircle className="spin" />}
+                Save profile
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   )
 }
 
+function IREntryCard({
+  entry,
+  index,
+  authorName,
+}: {
+  entry: IREntry
+  index: number
+  authorName: string
+}) {
+  return (
+    <article className="entry-card">
+      <div className="entry-index">{String(index + 1).padStart(2, '0')}</div>
+      <div className="entry-body">
+        <div className="entry-topline">
+          <span className={`category category-${entry.content.category ?? 'context'}`}>
+            {entry.content.category ?? 'fact'}
+          </span>
+          <code>{shortId(entry.id)}</code>
+          <span className="entry-attribution">
+            {authorName} · {formatDate(entry.created_at)}
+          </span>
+          <span className="confidence">
+            <i /> {entry.content.confidence ?? 'grounded'}
+          </span>
+        </div>
+        <p className="statement">
+          {entry.content.statement ?? JSON.stringify(entry.content)}
+        </p>
+        {!!entry.content.entities?.length && (
+          <div className="entity-row">
+            {entry.content.entities.map((entity) => (
+              <span key={entity}>{entity}</span>
+            ))}
+          </div>
+        )}
+        {entry.content.source && (
+          <div className="source-block">
+            <div className="source-label">
+              <ShieldCheck />
+              Source ·{' '}
+              {entry.content.source.kind === 'message'
+                ? 'Project message'
+                : `Page ${entry.content.source.page ?? '—'}`}
+            </div>
+            <blockquote>“{entry.content.source.quote}”</blockquote>
+          </div>
+        )}
+      </div>
+    </article>
+  )
+}
+
 function EmptyState({
+  onCreate,
   onUpload,
   configured,
 }: {
+  onCreate: () => void
   onUpload: () => void
   configured: boolean
 }) {
@@ -730,7 +1270,7 @@ function EmptyState({
         <div className="empty-sheet empty-sheet-back" />
         <div className="empty-sheet">
           <div className="sheet-icon">
-            <FileText />
+            <Users />
           </div>
           <span />
           <span />
@@ -743,40 +1283,77 @@ function EmptyState({
           <Database />
         </div>
       </div>
-      <p className="eyebrow">Document → source of truth</p>
-      <h1>Turn any document into grounded IR</h1>
+      <p className="eyebrow">One source of truth · every professional context</p>
+      <h1>Give every teammate the view they need</h1>
       <p className="empty-description">
-        Upload a PDF, presentation, document, or image. Mistral reads it, separates it
-        into atomic facts, and gives you one stable ID to query.
+        Capture project updates as neutral IR, then re-project the same facts through
+        each person’s own expertise, history, and priorities.
       </p>
-      <Button size="lg" onClick={onUpload} disabled={!configured}>
-        <UploadCloud />
-        Choose a document
-      </Button>
-      {!configured ? (
+      <div className="empty-actions">
+        <Button size="lg" onClick={onCreate}>
+          <Plus /> Create a project
+        </Button>
+        <Button size="lg" variant="outline" onClick={onUpload} disabled={!configured}>
+          <UploadCloud /> Import a document
+        </Button>
+      </div>
+      {!configured && (
         <p className="configuration-note">
-          Add <code>MISTRAL_API_KEY</code> to the backend before uploading.
+          Add <code>MISTRAL_API_KEY</code> before extracting or re-projecting IR.
         </p>
-      ) : (
-        <p className="file-note">PDF, DOCX, PPTX, PNG, JPG · up to 20 MB</p>
       )}
       <div className="empty-steps">
         <div>
           <span>01</span>
-          <strong>Mistral OCR</strong>
-          <p>Preserves page structure and source text.</p>
+          <strong>Speak naturally</strong>
+          <p>Each person writes in the language of their discipline.</p>
         </div>
         <div>
           <span>02</span>
-          <strong>Atomic IR</strong>
-          <p>Facts are validated against your schema.</p>
+          <strong>Neutral IR</strong>
+          <p>Mistral turns updates into atomic, traceable facts.</p>
         </div>
         <div>
           <span>03</span>
-          <strong>Grounded Q&A</strong>
-          <p>Answers cite exact entries and pages.</p>
+          <strong>Personal re-projection</strong>
+          <p>Implications are shaped by each viewer’s own context.</p>
         </div>
       </div>
+    </div>
+  )
+}
+
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-head">
+          <div>
+            <span className="brand-mark">
+              <Sparkles />
+            </span>
+            <h2>{title}</h2>
+          </div>
+          <button aria-label="Close" onClick={onClose}>
+            <X />
+          </button>
+        </div>
+        {children}
+      </section>
     </div>
   )
 }

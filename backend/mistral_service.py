@@ -4,7 +4,13 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-from ir_models import ExtractionBatch, ExtractedFact, GroundedAnswerDraft
+from ir_models import (
+    ExtractionBatch,
+    ExtractedFact,
+    GroundedAnswerDraft,
+    ReprojectionBatch,
+    read_content_path,
+)
 
 
 class MistralConfigurationError(RuntimeError):
@@ -86,6 +92,133 @@ class MistralDocumentService:
             "ocr_model": self.ocr_model,
             "chat_model": self.chat_model,
         }
+
+    def extract_message(
+        self,
+        message: str,
+        author_profile: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        client = self._get_client()
+        system_prompt = (
+            "Convert a person's natural-language project update into a neutral "
+            "Intermediate Representation. Create one atomic entry per independently "
+            "useful fact. Preserve exact names, quantities, dates, requirements, "
+            "decisions, actions, changes, risks, and constraints. The author's "
+            "profile helps you understand their vocabulary but must not become a "
+            "fact. Extract only what the message explicitly supports; do not add "
+            "implications or outside knowledge. Every entry must use source kind "
+            "'message', page null, and a short verbatim quote from the message."
+        )
+        payload = {
+            "author_profile": author_profile,
+            "message": message,
+        }
+        try:
+            response = client.chat.parse(
+                model=self.chat_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": json.dumps(payload, ensure_ascii=False),
+                    },
+                ],
+                response_format=ExtractionBatch,
+                temperature=0,
+                max_tokens=3000,
+            )
+            result = self._parsed_response(response, ExtractionBatch)
+        except Exception as exc:
+            raise MistralProcessingError(
+                self._api_error_message(exc, "extract structured IR")
+            ) from exc
+
+        facts = self._ground_message_facts(result.entries, message)
+        if not facts:
+            raise MistralProcessingError(
+                "Mistral returned no IR entries whose evidence could be verified "
+                "against the message."
+            )
+        return [fact.model_dump(mode="json") for fact in facts]
+
+    def reproject_entries(
+        self,
+        entries: list[dict[str, Any]],
+        viewer_profile: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        if not entries:
+            return []
+        client = self._get_client()
+        selected_entries = entries[-100:]
+        system_prompt = (
+            "Re-project the supplied neutral IR for this specific viewer. Shape "
+            "vocabulary, emphasis, and implications using only the viewer's "
+            "free-form profile; do not assume a fixed role. Surface useful, "
+            "non-obvious implications when the IR supports them, and mark those "
+            "claims as implications. Every claim must cite an exact supplied "
+            "entry_id and one or more existing paths such as 'content.statement', "
+            "'content.entities', 'content.category', or 'content.source.quote'. "
+            "Never invent an ID or path. Do not introduce a factual assertion that "
+            "cannot be traced to those paths."
+        )
+        payload = {
+            "viewer_profile": viewer_profile,
+            "ir_entries": [
+                {"id": entry["id"], "content": entry["content"]}
+                for entry in selected_entries
+            ],
+        }
+        try:
+            response = client.chat.parse(
+                model=self.chat_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": json.dumps(payload, ensure_ascii=False),
+                    },
+                ],
+                response_format=ReprojectionBatch,
+                temperature=0,
+                max_tokens=5000,
+            )
+            batch = self._parsed_response(response, ReprojectionBatch)
+        except Exception as exc:
+            raise MistralProcessingError(
+                self._api_error_message(exc, "re-project this project")
+            ) from exc
+
+        entries_by_id = {entry["id"]: entry for entry in selected_entries}
+        claims = []
+        for index, draft in enumerate(batch.claims):
+            entry = entries_by_id.get(draft.entry_id)
+            if entry is None:
+                continue
+            grounding = []
+            for path in dict.fromkeys(draft.grounding_paths):
+                value = read_content_path(entry, path)
+                if value is not None:
+                    grounding.append(
+                        {
+                            "entry_id": entry["id"],
+                            "path": path,
+                            "value": value,
+                        }
+                    )
+            if not grounding:
+                continue
+            claims.append(
+                {
+                    "id": f"claim_{entry['id']}_{index + 1}",
+                    "text": draft.text,
+                    "entry_id": entry["id"],
+                    "grounding": grounding,
+                    "is_implication": draft.is_implication,
+                    "author": entry.get("author"),
+                    "created_at": entry.get("created_at"),
+                }
+            )
+        return claims
 
     def answer_question(
         self,
@@ -246,10 +379,10 @@ class MistralDocumentService:
             "Create atomic facts: one independently useful claim per entry. Extract "
             "only facts explicitly present in the supplied pages. Preserve precise "
             "names, quantities, dates, requirements, decisions, actions, changes, "
-            "risks, and constraints. Each entry must include the one-indexed page "
-            "number and a short verbatim supporting quote. Do not add implications, "
-            "recommendations, or outside knowledge. Prefer fewer complete facts over "
-            "many fragments."
+            "risks, and constraints. Each entry must use source kind 'document', "
+            "include the one-indexed page number, and include a short verbatim "
+            "supporting quote. Do not add implications, recommendations, or outside "
+            "knowledge. Prefer fewer complete facts over many fragments."
         )
         try:
             response = client.chat.parse(
@@ -349,8 +482,34 @@ class MistralDocumentService:
             quote = cls._normalise(fact.source.quote)
             statement = cls._normalise(fact.statement)
             if (
-                len(quote) < 8
+                fact.source.kind != "document"
+                or fact.source.page is None
+                or len(quote) < 3
                 or quote not in page_text.get(fact.source.page, "")
+                or statement in seen
+            ):
+                continue
+            seen.add(statement)
+            result.append(fact)
+        return result
+
+    @classmethod
+    def _ground_message_facts(
+        cls,
+        facts: list[ExtractedFact],
+        message: str,
+    ) -> list[ExtractedFact]:
+        source_text = cls._normalise(message)
+        result = []
+        seen: set[str] = set()
+        for fact in facts:
+            quote = cls._normalise(fact.source.quote)
+            statement = cls._normalise(fact.statement)
+            if (
+                fact.source.kind != "message"
+                or fact.source.page is not None
+                or len(quote) < 3
+                or quote not in source_text
                 or statement in seen
             ):
                 continue

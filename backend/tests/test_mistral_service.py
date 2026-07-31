@@ -10,9 +10,10 @@ def test_grounding_removes_quotes_that_are_not_on_the_cited_page():
             {
                 "statement": "The sampling rate is 2 kHz.",
                 "category": "metric",
-                "entities": ["sampling rate"],
-                "source": {
-                    "page": 1,
+                    "entities": ["sampling rate"],
+                    "source": {
+                        "kind": "document",
+                        "page": 1,
                     "quote": "The sampling rate is 2 kHz.",
                 },
                 "confidence": "high",
@@ -22,9 +23,10 @@ def test_grounding_removes_quotes_that_are_not_on_the_cited_page():
             {
                 "statement": "The device is approved.",
                 "category": "decision",
-                "entities": ["device"],
-                "source": {
-                    "page": 1,
+                    "entities": ["device"],
+                    "source": {
+                        "kind": "document",
+                        "page": 1,
                     "quote": "The device is already approved.",
                 },
                 "confidence": "high",
@@ -84,3 +86,54 @@ def test_api_error_message_explains_invalid_key():
     assert "401 Unauthorized" in message
     assert "new inference API key" in message
     assert "backend/.env" in message
+
+
+def test_reprojection_drops_claims_with_unknown_ids_or_paths():
+    parsed = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    parsed={
+                        "claims": [
+                            {
+                                "text": "Review the firmware baseline.",
+                                "entry_id": "ir_real",
+                                "grounding_paths": ["content.statement"],
+                                "is_implication": True,
+                            },
+                            {
+                                "text": "Invented claim.",
+                                "entry_id": "ir_unknown",
+                                "grounding_paths": ["content.statement"],
+                                "is_implication": False,
+                            },
+                            {
+                                "text": "Invalid path.",
+                                "entry_id": "ir_real",
+                                "grounding_paths": ["content.does_not_exist"],
+                                "is_implication": False,
+                            },
+                        ]
+                    }
+                )
+            )
+        ]
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(parse=lambda **_kwargs: parsed),
+    )
+    service = MistralDocumentService("", client=client)
+    entries = [
+        {
+            "id": "ir_real",
+            "author": "user_engineer",
+            "created_at": "2026-07-31T00:00:00+00:00",
+            "content": {"statement": "The debounce filter was enabled."},
+        }
+    ]
+
+    claims = service.reproject_entries(entries, {"expertise": "Firmware"})
+
+    assert len(claims) == 1
+    assert claims[0]["entry_id"] == "ir_real"
+    assert claims[0]["grounding"][0]["path"] == "content.statement"

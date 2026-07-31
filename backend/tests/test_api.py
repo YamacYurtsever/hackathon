@@ -58,6 +58,40 @@ class FakeMistralService:
             "model": "fake-chat",
         }
 
+    def extract_message(self, message, author_profile):
+        assert author_profile["name"] == "Maya"
+        return [
+            {
+                "statement": "The debounce filter was enabled.",
+                "category": "change",
+                "entities": ["debounce filter"],
+                "source": {
+                    "kind": "message",
+                    "page": None,
+                    "quote": message,
+                },
+                "confidence": "high",
+            }
+        ]
+
+    def reproject_entries(self, entries, viewer_profile):
+        assert viewer_profile["name"] == "Maya"
+        return [
+            {
+                "id": f"claim_{entries[0]['id']}_1",
+                "text": "The filter change affects your firmware baseline.",
+                "entry_id": entries[0]["id"],
+                "grounding": [
+                    {
+                        "entry_id": entries[0]["id"],
+                        "path": "content.statement",
+                        "value": entries[0]["content"]["statement"],
+                    }
+                ],
+                "is_implication": True,
+            }
+        ]
+
 
 @pytest.fixture()
 def client(tmp_path: Path):
@@ -138,4 +172,50 @@ def test_unknown_project_id_returns_404(client):
     test_client, _service = client
     response = test_client.get("/api/projects/prj_doesnotexist")
     assert response.status_code == 404
-    assert response.get_json()["error"] == "That project ID was not found."
+    assert response.get_json()["error"] == "The requested resource was not found."
+
+
+def test_profiles_projects_messages_views_and_changes(client):
+    test_client, _service = client
+    profile_response = test_client.post(
+        "/api/profiles",
+        json={"content": {"name": "Maya", "expertise": "Firmware"}},
+    )
+    assert profile_response.status_code == 201
+    profile_id = profile_response.get_json()["id"]
+
+    project_response = test_client.post(
+        "/api/projects",
+        json={"name": "MedGuard", "creator_id": profile_id},
+    )
+    assert project_response.status_code == 201
+    project = project_response.get_json()
+    assert project["users"] == [profile_id]
+    assert project["admins"] == [profile_id]
+
+    message_response = test_client.post(
+        f"/api/projects/{project['id']}/messages",
+        json={
+            "text": "The debounce filter was enabled.",
+            "author_id": profile_id,
+        },
+    )
+    assert message_response.status_code == 201
+    entry = message_response.get_json()["entries"][0]
+    assert entry["author"] == profile_id
+
+    view_response = test_client.get(
+        f"/api/projects/{project['id']}/view",
+        query_string={"user_id": profile_id},
+    )
+    assert view_response.status_code == 200
+    claim = view_response.get_json()["claims"][0]
+    assert claim["entry_id"] == entry["id"]
+    assert claim["grounding"][0]["path"] == "content.statement"
+
+    changes_response = test_client.get(
+        f"/api/projects/{project['id']}/changes",
+        query_string={"since": "2020-01-01T00:00:00+00:00"},
+    )
+    assert changes_response.status_code == 200
+    assert changes_response.get_json()["entries"][0]["id"] == entry["id"]
