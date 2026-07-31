@@ -12,6 +12,14 @@ EXAMPLE_PROFILES = [
         "username": "engineer",
         "content": {
             "name": "Priya Raman",
+            "description": (
+                "Embedded firmware engineer, ten years in signal acquisition and "
+                "mostly biopotential front-ends. I own the sensor front-end and the "
+                "detection firmware on this project and I've been on it since kickoff. "
+                "Talk to me in sampling rates, filter topologies and ADC behaviour — "
+                "I don't need DSP or embedded work explained. What I do want to know "
+                "is when something I changed lands on someone else's plate."
+            ),
             "describes_self_as": "Embedded firmware engineer. Ten years in signal acquisition, mostly biopotential front-ends.",
             "expertise": ["DSP", "ADC design", "firmware", "filter design"],
             "on_this_project": "Owns the sensor front-end and detection firmware. Joined at kickoff.",
@@ -23,6 +31,14 @@ EXAMPLE_PROFILES = [
         "username": "biologist",
         "content": {
             "name": "Marcus Oyelaran",
+            "description": (
+                "Clinical scientist. I design and run the validation studies that "
+                "produce our performance claims, and on this project I own the "
+                "false-positive characterisation study and the clinical evidence "
+                "package. Study design, arrhythmia physiology and statistics are my "
+                "own ground. Firmware and DSP are not — tell me what a signal chain "
+                "change does to what I'm measuring, not how it works."
+            ),
             "describes_self_as": "Clinical scientist. I design and run the validation studies that produce our performance claims.",
             "expertise": ["study design", "cardiac physiology", "biostatistics"],
             "on_this_project": "Owns the false-positive characterisation study and the clinical evidence package.",
@@ -35,6 +51,14 @@ EXAMPLE_PROFILES = [
         "username": "lawyer",
         "content": {
             "name": "Ellen Whitcombe",
+            "description": (
+                "Regulatory counsel for medical devices, fifteen years of 510(k) and "
+                "PMA submissions. I own the 510(k) here and joined about three months "
+                "in. I know the framework and what triggers a new submission, so skip "
+                "the primer. Skip the engineering detail too: tell me what changed and "
+                "whether it's significant, and I'll work out what it means for the "
+                "filing."
+            ),
             "describes_self_as": "Regulatory counsel, medical devices. Fifteen years of 510(k) and PMA submissions.",
             "expertise": ["FDA device regulation", "21 CFR", "submission strategy"],
             "on_this_project": "Owns the 510(k) submission. Joined three months in.",
@@ -46,6 +70,13 @@ EXAMPLE_PROFILES = [
         "username": "business",
         "content": {
             "name": "Dan Foster",
+            "description": (
+                "Ops lead. I own the launch plan, the budget and the vendor "
+                "commitments, which on this project means the hospital pilot date and "
+                "the burn rate. I'm not an engineer or a scientist and don't need to "
+                "be — I need consequences, not mechanisms. If something moves a date "
+                "or a cost, that's mine. If it doesn't, it's noise."
+            ),
             "describes_self_as": "Ops lead. I own the launch plan, budget and vendor commitments.",
             "expertise": ["program management", "budgeting", "vendor management"],
             "on_this_project": "Owns the hospital pilot launch date and the burn rate.",

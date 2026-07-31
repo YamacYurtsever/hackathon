@@ -31,8 +31,9 @@ export function ProfilePage() {
     setStatus('')
     setSaving(true)
     try {
-      // Keep any other content keys the profile already has (seeded
-      // profiles carry role/expertise/history_summary).
+      // Keep any other content keys the profile already has. Seeded profiles
+      // carry structured hints alongside the prose — expertise, what not to
+      // explain to them — and re-projection reads all of it.
       setProfile(
         await api.updateOwnProfile({ ...profile!.content, description }),
       )
@@ -68,7 +69,7 @@ export function ProfilePage() {
               />
             </div>
             <div className="flex items-center gap-3">
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" variant="brand" disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
               </Button>
               {status && (
