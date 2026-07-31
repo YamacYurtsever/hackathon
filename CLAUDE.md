@@ -418,9 +418,9 @@ Settled:
 - [X] Provenance on each proposal: document name and where in it the fact came from. `source_quote` must stay verbatim, which is harder once the source is a file rather than something the author just typed — verified in code the way citations are, and a quote we can't find in the passage is dropped while the fact survives
 - [X] Passages are read concurrently. A dozen sequential model calls is a minute of watching a spinner; the same dozen four at a time is not
 - [X] Size and page ceiling, refused up front. A 300-page PDF is a cost and latency incident, not a demo. Page count is read from the PDF trailer, so a refusal costs nothing
-- [ ] Tests: chunk boundaries don't split facts, restated facts reconcile, a non-member is refused. **Written but not passing** — 15 of the 30 in `test_documents.py` fail or error, and they failed on the branch before it was merged, so this is not merge damage. Two causes, neither in the feature itself:
-  - The stubs patch `"ai.documents.reconcile.mistral.complete_json"` as a dotted path. `ai/documents/__init__.py` does `from .reconcile import reconcile`, so the name `reconcile` in that package is the *function*, and the submodule can't be reached that way. Worse, `documents` and `reconcile` both do `from .. import mistral` — the same module object — so the fixture's two stubs overwrite each other and can't distinguish extract from reconcile. Fixing it means one stub that dispatches on the system prompt, not a change of import path
-  - Three are genuine test-vs-implementation disagreements: an empty document isn't refused, PDF passages come back labelled `pages 1–2` where the test expects `page 2`, and consecutive passages don't overlap the way the overlap test asserts. Someone has to decide which side is right
+- [X] Tests: chunk boundaries don't split facts, restated facts reconcile, a non-member is refused
+- [X] One stub, dispatching on the system prompt. `ai/documents` and `ai/documents/reconcile` both do `from .. import mistral`, so they hold the *same* module object — there is no per-module patch point, and patching one patches both. Extraction and reconciliation are told apart by the prompt they were handed, which is the only thing that actually distinguishes them
+- [X] A document of nothing but whitespace is refused. `if not total` only caught a zero-byte file, but the refusal it guards says "there's no text in that file", and blank lines are no text — passing one through produces a passage a reader can only invent from
 
 **Frontend**
 
@@ -440,4 +440,4 @@ Settled:
 - [ ] Project change timeline view
 - [ ] Third party integration
 - [ ] Evidence tracking for external sources
-- [ ] Change ir entry schema for content to be a string instead of object
+- [ ] Change IR entry schema for content to be a string instead of object

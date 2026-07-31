@@ -7,13 +7,36 @@ import io
 
 import pytest
 
+from ai import mistral
 from ai.documents import read_document
 from ai.documents.chunk import split_passages
 from ai.documents.extract import DocumentError, extract_pages
+from ai.documents.prompt import RECONCILE_SYSTEM_PROMPT
 from ai.documents.reconcile import collapse_identical, quote_from, reconcile
 from data import store
 
 DOC = "spec.md"
+
+
+def stub_model(monkeypatch, extract=None, reconcile=None):
+    """Stubs both model calls at their single shared patch point.
+
+    `ai.documents` and `ai.documents.reconcile` each do `from .. import mistral`,
+    so they hold the *same* module object — there is no per-module attribute to
+    patch, and patching one patches both. The system prompt is what tells the
+    two calls apart, so that's what this dispatches on.
+    """
+
+    def dispatch(system, user, model=None):
+        handler = reconcile if system == RECONCILE_SYSTEM_PROMPT else extract
+        if handler is None:
+            raise AssertionError(
+                "unexpected model call: "
+                f"{'reconcile' if system == RECONCILE_SYSTEM_PROMPT else 'extract'}"
+            )
+        return handler(system=system, user=user)
+
+    monkeypatch.setattr(mistral, "complete_json", dispatch)
 
 
 def op(statement: str, quote: str | None = None, **extra) -> dict:
@@ -95,9 +118,12 @@ def test_consecutive_passages_overlap():
 
     assert len(passages) > 2
     # The tail of one passage is repeated at the head of the next, which is what
-    # gives a straddling fact somewhere to survive.
+    # gives a straddling fact somewhere to survive. The carry is whole blocks —
+    # a half-sentence tail is exactly what the overlap exists to prevent — so
+    # this checks the last block reappears, not a fixed number of characters.
     for earlier, later in zip(passages, passages[1:]):
-        assert earlier.text[-40:] in later.text
+        tail = earlier.text.split("\n\n")[-1]
+        assert later.text.startswith(tail)
 
 
 def test_passages_stay_near_the_target_size():
@@ -125,7 +151,16 @@ def test_pdf_passages_are_located_by_page():
         ["First page prose.", "Second page prose."], paginated=True, target=20, overlap=5
     )
 
-    assert [passage.location for passage in passages] == ["page 1", "page 2"]
+    # A location describes the text the passage actually holds. The second one
+    # opens with the tail carried over from page 1, so it spans both — saying
+    # "page 2" would misattribute any fact drawn from that carried tail.
+    assert [passage.location for passage in passages] == ["page 1", "pages 1–2"]
+
+
+def test_a_passage_within_one_page_names_only_that_page():
+    passages = split_passages(["Only page prose."], paginated=True)
+
+    assert [passage.location for passage in passages] == ["page 1"]
 
 
 def test_text_passages_are_located_by_line():
@@ -175,9 +210,11 @@ def test_a_fact_restated_word_for_word_collapses_without_a_model():
 def test_a_fact_reworded_across_chunks_collapses_to_one_proposal(monkeypatch):
     """The same fact in an abstract and an appendix is worded differently each
     time, so only a reader can tell those are one fact."""
-    monkeypatch.setattr(
-        "ai.documents.reconcile.mistral.complete_json",
-        lambda **_: _Result({"duplicates": [{"keep": 0, "drop": [1]}], "revisions": []}),
+    stub_model(
+        monkeypatch,
+        reconcile=lambda **_: _Result(
+            {"duplicates": [{"keep": 0, "drop": [1]}], "revisions": []}
+        ),
     )
 
     reconciled = reconcile(
@@ -194,12 +231,9 @@ def test_a_fact_reworded_across_chunks_collapses_to_one_proposal(monkeypatch):
 
 
 def test_a_document_restating_a_known_fact_becomes_an_update(monkeypatch):
-    monkeypatch.setattr(
-        "ai.documents.reconcile.mistral.complete_json",
-        lambda **_: _Result(
+    stub_model(monkeypatch, reconcile=lambda **_: _Result(
             {"duplicates": [], "revisions": [{"proposal": 1, "entry_id": "e-17"}]}
-        ),
-    )
+        ))
     existing = [{"id": "e-17", "content": {"statement": "Sampling is 1 kHz."}}]
 
     reconciled = reconcile(
@@ -213,12 +247,9 @@ def test_a_document_restating_a_known_fact_becomes_an_update(monkeypatch):
 
 def test_a_revision_naming_an_unknown_entry_is_ignored(monkeypatch):
     """It would land as a create at merge time, inventing a fact nobody proposed."""
-    monkeypatch.setattr(
-        "ai.documents.reconcile.mistral.complete_json",
-        lambda **_: _Result(
+    stub_model(monkeypatch, reconcile=lambda **_: _Result(
             {"duplicates": [], "revisions": [{"proposal": 0, "entry_id": "ghost"}]}
-        ),
-    )
+        ))
 
     reconciled = reconcile([prepared("One."), prepared("Two.")], [])
 
@@ -227,9 +258,9 @@ def test_a_revision_naming_an_unknown_entry_is_ignored(monkeypatch):
 
 
 def test_an_out_of_range_index_doesnt_drop_a_real_fact(monkeypatch):
-    monkeypatch.setattr(
-        "ai.documents.reconcile.mistral.complete_json",
-        lambda **_: _Result({"duplicates": [{"keep": 0, "drop": [30, "x", 0]}]}),
+    stub_model(
+        monkeypatch,
+        reconcile=lambda **_: _Result({"duplicates": [{"keep": 0, "drop": [30, "x", 0]}]}),
     )
 
     reconciled = reconcile([prepared("One."), prepared("Two.")])
@@ -244,7 +275,7 @@ def test_a_failed_reconcile_call_keeps_the_proposals(monkeypatch):
     def explode(**_):
         raise RuntimeError("no")
 
-    monkeypatch.setattr("ai.documents.reconcile.mistral.complete_json", explode)
+    stub_model(monkeypatch, reconcile=explode)
 
     assert len(reconcile([prepared("One."), prepared("Two.")])) == 2
 
@@ -268,10 +299,10 @@ def stub_reader(monkeypatch):
         first = passage.split(".")[0].strip() + "."
         return _Result({"operations": [op(f"Neutral: {first}", quote=first)]})
 
-    monkeypatch.setattr("ai.documents.mistral.complete_json", fake_extract)
-    monkeypatch.setattr(
-        "ai.documents.reconcile.mistral.complete_json",
-        lambda **_: _Result({"duplicates": [], "revisions": []}),
+    stub_model(
+        monkeypatch,
+        extract=fake_extract,
+        reconcile=lambda **_: _Result({"duplicates": [], "revisions": []}),
     )
 
 
@@ -283,17 +314,16 @@ def test_reading_a_document_returns_proposals_with_provenance(stub_reader):
     provenance = result["operations"][0]["provenance"]
     assert provenance["document"] == "spec.md"
     assert provenance["locations"]
-    assert provenance["quote"] == "Sampling is 2 kHz"
+    assert provenance["quote"] == "Sampling is 2 kHz."
 
 
 def test_a_paraphrased_quote_keeps_the_fact_and_drops_the_quote(monkeypatch):
-    monkeypatch.setattr(
-        "ai.documents.mistral.complete_json",
-        lambda **_: _Result({"operations": [op("Sampling is 2 kHz.", quote="made up")]}),
-    )
-    monkeypatch.setattr(
-        "ai.documents.reconcile.mistral.complete_json",
-        lambda **_: _Result({}),
+    stub_model(
+        monkeypatch,
+        extract=lambda **_: _Result(
+            {"operations": [op("Sampling is 2 kHz.", quote="made up")]}
+        ),
+        reconcile=lambda **_: _Result({}),
     )
 
     result = read_document("spec.md", b"Sampling is 2 kHz.")
@@ -305,9 +335,9 @@ def test_a_paraphrased_quote_keeps_the_fact_and_drops_the_quote(monkeypatch):
 def test_an_unusable_proposal_is_counted_not_swallowed(monkeypatch):
     """A fact the reader thinks they imported and didn't is the failure that
     matters here."""
-    monkeypatch.setattr(
-        "ai.documents.mistral.complete_json",
-        lambda **_: _Result({"operations": [{"op": "create", "content": {}}]}),
+    stub_model(
+        monkeypatch,
+        extract=lambda **_: _Result({"operations": [{"op": "create", "content": {}}]}),
     )
 
     result = read_document("spec.md", b"Sampling is 2 kHz.")
@@ -325,10 +355,10 @@ def test_one_failing_passage_doesnt_lose_the_others(monkeypatch):
             raise RuntimeError("rate limited")
         return _Result({"operations": [op("A fact.")]})
 
-    monkeypatch.setattr("ai.documents.mistral.complete_json", flaky)
-    monkeypatch.setattr(
-        "ai.documents.reconcile.mistral.complete_json",
-        lambda **_: _Result({"duplicates": [], "revisions": []}),
+    stub_model(
+        monkeypatch,
+        extract=flaky,
+        reconcile=lambda **_: _Result({"duplicates": [], "revisions": []}),
     )
     text = "\n\n".join(f"Paragraph {n} states a fact." for n in range(200))
 

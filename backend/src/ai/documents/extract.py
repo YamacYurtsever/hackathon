@@ -59,7 +59,9 @@ def extract_pages(filename: str, data: bytes) -> list[str]:
             f"That document is about {total // 1000}k characters. "
             f"The limit is {MAX_CHARS // 1000}k — send the relevant section."
         )
-    if not total:
+    # Stripped, not raw: a file of blank lines has no text in it either, and
+    # passing one on produces a passage the reader can only hallucinate from.
+    if not any(page.strip() for page in pages):
         raise DocumentError(
             "There's no text in that file. A scanned PDF is an image of text, "
             "not text — we can't read one."
