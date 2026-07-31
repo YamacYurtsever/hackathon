@@ -20,8 +20,13 @@ export interface IREntry {
 export interface Project {
   id: string
   name: string
-  ir_entry_ids: string[]
+  ir: string[]
   users: string[]
+  // Subset of users with admin rights. Creator is added here automatically
+  // on creation. Only admins approve IR amendments and promote other
+  // members to admin. If the last admin exits and users remain, one is
+  // auto-promoted — a non-empty project always has at least one admin.
+  admins: string[]
 }
 
 // Global per user, not scoped to a project. Free-form on purpose — role,
