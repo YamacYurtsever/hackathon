@@ -1,5 +1,7 @@
 # Context Translator
 
+---
+
 ## Problem Statement
 How might AI help multi-disciplinary teams make sense of information, present ideas, align on decisions, and review work more effectively?
 
