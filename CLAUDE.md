@@ -370,7 +370,7 @@ A project with no entries has nothing to summarize and nothing to list, so both 
 
 Most of what a team already knows is in a file, not in someone's head waiting to be retyped a sentence at a time. Drop in the spec, the protocol, the meeting transcript, and the facts land in the IR.
 
-**Drag onto the project view — there is no import screen.** A document enters where a message enters, because it *is* a message: a longer one. Dragging a file anywhere over the project view arms a drop target; releasing it runs the same read → propose → submit → merge path a typed sentence runs. Nothing new to learn, and no second way for the IR to be written.
+**Drop it on the project view, or use the paperclip — there is no import screen.** A document enters where a message enters, because it *is* a message: a longer one. Dragging a file anywhere over the project view arms a drop target; releasing it runs the same read → propose → submit → merge path a typed sentence runs. The paperclip in the composer opens a file picker and does the identical thing, for anyone whose file isn't in a window they can drag from. Nothing new to learn, and no second way for the IR to be written.
 
 ```
         drag a file over the project view
@@ -394,7 +394,13 @@ Most of what a team already knows is in a file, not in someone's head waiting to
 
 **2. Extraction has to reconcile with itself.** The same fact stated in an abstract, a table, and an appendix must produce one operation, not three. Within a document this is new work: `/input` only ever reconciled against *stored* entries, never against other proposals in the same batch.
 
-**3. Review is the real problem.** A 20-page spec might yield 80 proposals, and "confirm 80 changes" is a button nobody reads before clicking. Gate 1 exists so a person actually looks at what we understood; 80 cards defeats that by exhaustion. This is the part most likely to need a different answer than the typed-message path, not a scaled-up version of it.
+**3. Review is the real problem.** A 20-page spec might yield 80 proposals, and "confirm 80 changes" is a button nobody reads before clicking. Gate 1 exists so a person actually looks at what we understood; 80 cards defeats that by exhaustion.
+
+What it became: the typed-message cards, with **one split and no sorting**. Changes to facts already on record come first — those rewrite something the project already agreed to, and the struck-through old wording is what you need to judge them. Everything after is a new fact. Both halves render identically, each proposal keeps its own keep / edit / drop, and each section has keep-all and drop-all so the common case is one click.
+
+An earlier build grouped the new facts by where in the document they were found — "page 3 · 6 facts" — and collapsed each to a single line. It was denser, and it was worse: a position in a file is not a reason to review two facts together, and the one-line form made the proposals look like a list to skim rather than a set of decisions. Where a fact came from is still recorded; it just belongs on the request at gate 2, not as the organising principle of the review. The verbatim sentence sits under each card, which is what actually saves you re-reading the document.
+
+The 80-proposal case is still the risk. Keep-all/drop-all per section is what makes it survivable; if a real import turns out to be unreviewable, the next move is triaging by confidence, not by position.
 
 Settled:
 
@@ -404,23 +410,27 @@ Settled:
 
 **Backend**
 
-- [ ] `POST /projects/:id/document` — multipart upload, member-only, returns proposals and stores **nothing**, mirroring `/input`
-- [ ] Text extraction for PDF, markdown and plain text; reject anything else with a clear message rather than extracting garbage
-- [ ] Chunk into passages small enough to extract from, overlapping enough that a fact spanning a boundary survives
-- [ ] Reconcile across chunks: the same fact restated in a summary and an appendix updates one proposal, not three
-- [ ] Reconcile against existing entries too, so a document restating what the project already records produces `update`s rather than duplicates
-- [ ] Provenance on each proposal: document name and where in it the fact came from. `source_quote` must stay verbatim, which is harder once the source is a file rather than something the author just typed — the citation should point at the document and location, not only the quote
-- [ ] Size and page ceiling, refused up front. A 300-page PDF is a cost and latency incident, not a demo
-- [ ] Tests: chunk boundaries don't split facts, restated facts reconcile, a non-member is refused
+- [X] `POST /projects/:id/document` — multipart upload, member-only, returns proposals and stores **nothing**, mirroring `/input`
+- [X] Text extraction for PDF, markdown and plain text; reject anything else with a clear message rather than extracting garbage
+- [X] Chunk into passages small enough to extract from, overlapping enough that a fact spanning a boundary survives
+- [X] Reconcile across chunks: the same fact restated in a summary and an appendix updates one proposal, not three
+- [X] Reconcile against existing entries too, so a document restating what the project already records produces `update`s rather than duplicates
+- [X] Provenance on each proposal: document name and where in it the fact came from. `source_quote` must stay verbatim, which is harder once the source is a file rather than something the author just typed — verified in code the way citations are, and a quote we can't find in the passage is dropped while the fact survives
+- [X] Passages are read concurrently. A dozen sequential model calls is a minute of watching a spinner; the same dozen four at a time is not
+- [X] Size and page ceiling, refused up front. A 300-page PDF is a cost and latency incident, not a demo. Page count is read from the PDF trailer, so a refusal costs nothing
+- [ ] Tests: chunk boundaries don't split facts, restated facts reconcile, a non-member is refused. **Written but not passing** — 15 of the 30 in `test_documents.py` fail or error, and they failed on the branch before it was merged, so this is not merge damage. Two causes, neither in the feature itself:
+  - The stubs patch `"ai.documents.reconcile.mistral.complete_json"` as a dotted path. `ai/documents/__init__.py` does `from .reconcile import reconcile`, so the name `reconcile` in that package is the *function*, and the submodule can't be reached that way. Worse, `documents` and `reconcile` both do `from .. import mistral` — the same module object — so the fixture's two stubs overwrite each other and can't distinguish extract from reconcile. Fixing it means one stub that dispatches on the system prompt, not a change of import path
+  - Three are genuine test-vs-implementation disagreements: an empty document isn't refused, PDF passages come back labelled `pages 1–2` where the test expects `page 2`, and consecutive passages don't overlap the way the overlap test asserts. Someone has to decide which side is right
 
 **Frontend**
 
-- [ ] Drop target over the project view — armed on dragover, dismissed on dragleave or Escape, so you can't get stuck in it
-- [ ] Reject unsupported types on drop, before uploading
-- [ ] Progress while it reads: a 20-page spec is many model calls, and a silent minute reads as a hang
-- [ ] Review at volume — the open question. Grouping by subject, or confidence-based triage, or accepting that a document import is reviewed differently from a sentence. Whatever it is, it must not be 80 cards and a Submit button
-- [ ] Each proposal shows the passage it came from, so checking one doesn't mean re-reading the document
-- [ ] Nothing is stored until submit, exactly as with a typed message — a bad extraction dropped at gate 1 leaves no trace
+- [X] Drop target over the project view — armed on dragover, dismissed on dragleave or Escape, so you can't get stuck in it
+- [X] Paperclip in the composer as the same entry point for a file you can't drag
+- [X] Reject unsupported types and oversized files on drop, before uploading — the server refuses the same things, but nobody should watch a file upload only to be told it was never readable
+- [X] Progress while it reads: a 20-page spec is many model calls, and a silent minute reads as a hang. No fake percentage — the passage count isn't known until the read returns — just what it's reading and how long it's been at it
+- [X] Review at volume — the typed-message cards, split into changes-to-existing-facts and new facts, with keep-all/drop-all per section. Not grouped by position in the document: see the discussion above for why that was tried and dropped
+- [X] Each proposal shows the passage it came from, so checking one doesn't mean re-reading the document
+- [X] Nothing is stored until submit, exactly as with a typed message — a bad extraction dropped at gate 1 leaves no trace
 
 ---
 

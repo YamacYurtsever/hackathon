@@ -1,14 +1,18 @@
 """The read and write paths over a project's IR.
 
 Read: `/view` re-projects the project for you, `/changes` reports what's new.
-Write: `/input` proposes changes and stores nothing, `/requests` submits the
-ones the author keeps — one request per change — and only an admin can merge
-them. Nothing reaches the IR by any other route.
+Write: `/input` proposes changes and stores nothing, `/document` does the same
+for a file, and `/requests` submits the ones the author keeps — one request per
+change — and only an admin can merge them. Nothing reaches the IR by any other
+route.
 """
+
+import os
 
 from flask import Blueprint, jsonify, request
 
 from ai import reprojection
+from ai.documents import DocumentError, read_document
 from ai.interpret import interpret_message
 from ai.interpret.validate import clean_operation
 from data import store
@@ -53,6 +57,39 @@ def project_input(project_id: str):
         result["answer_segments"] = grounded["segments"]
 
     return jsonify({"text": text, **result})
+
+
+@bp.post("/api/projects/<project_id>/document")
+@login_required
+def project_document(project_id: str):
+    """A file is a longer message, so it arrives where a message arrives and
+    comes back the same way: proposed changes, nothing stored. A document is not
+    a licence to write to the IR — it still passes both gates.
+
+    The file itself is never kept. We take its text and its name; the bytes go
+    out of scope when this returns."""
+    project, error = _member_project(project_id)
+    if project is None:
+        return error
+
+    uploaded = request.files.get("file")
+    if uploaded is None or not (uploaded.filename or "").strip():
+        return jsonify({"error": "a file is required"}), 400
+
+    # Never touches the filesystem, so this is about what gets echoed back and
+    # stored in a request's source text, not about path traversal.
+    filename = os.path.basename(uploaded.filename)[:120]
+
+    try:
+        result = read_document(
+            filename, uploaded.read(), existing=store.entries_for_project(project_id)
+        )
+    except DocumentError as refusal:
+        # A refusal is a message to a person, not a stack trace: it says which
+        # ceiling was hit and what to send instead.
+        return jsonify({"error": str(refusal)}), 400
+
+    return jsonify(result)
 
 
 @bp.get("/api/projects/<project_id>/view")
@@ -106,6 +143,41 @@ def project_changes(project_id: str):
 
 # --- write path ---
 
+# Long enough to check a fact against, short enough to read in a queue.
+_QUOTE_LIMIT = 300
+
+
+def _source_text(raw: object, fallback: str) -> str:
+    """What a reviewer is shown as the origin of one change.
+
+    For a typed message that's the message. For a fact read out of a document
+    it's the document, where in it, and the sentence that said so — otherwise
+    checking one proposal means going back and re-reading the file.
+    """
+    provenance = raw.get("provenance") if isinstance(raw, dict) else None
+    if not isinstance(provenance, dict):
+        return fallback
+
+    document = provenance.get("document")
+    if not isinstance(document, str) or not document.strip():
+        return fallback
+
+    where = ", ".join(
+        location
+        for location in provenance.get("locations") or []
+        if isinstance(location, str) and location.strip()
+    )
+    origin = f"{document.strip()}{f' — {where}' if where else ''}"
+
+    quote = provenance.get("quote")
+    if not isinstance(quote, str) or not quote.strip():
+        return origin
+
+    quote = quote.strip()
+    if len(quote) > _QUOTE_LIMIT:
+        quote = quote[:_QUOTE_LIMIT].rstrip() + "…"
+    return f"{origin}: “{quote}”"
+
 
 @bp.post("/api/projects/<project_id>/requests")
 @login_required
@@ -129,9 +201,12 @@ def submit_requests(project_id: str):
 
     source_text = (body.get("text") or "").strip()
     author = current_profile()["id"]
+    # Provenance rides on the operation and is stripped from it by cleaning —
+    # it isn't part of the fact. It becomes the request's source text, which is
+    # where a reviewer looks for "where did this come from?".
     created = [
-        store.create_request(project_id, author, source_text, operation)
-        for operation in cleaned
+        store.create_request(project_id, author, _source_text(raw, source_text), operation)
+        for raw, operation in zip(operations, cleaned)
     ]
 
     # An admin submitting their own change has already made the only decision
