@@ -4,12 +4,9 @@ from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
 
-import auth
-import pipeline
-import profiles
-import projects
-import store
-from seed import seed_medguard
+from data import store
+from data.seed import seed_medguard
+from routes import auth, pipeline, profiles, projects
 
 load_dotenv()
 

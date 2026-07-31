@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { AppLayout } from '@/components/app-layout'
 import { AnswerCard } from '@/components/project/answer-card'
-import { ChangesetPreview } from '@/components/project/changeset-preview'
+import { ChangesetDialog } from '@/components/project/changeset-dialog'
 import { Composer } from '@/components/project/composer'
 import { Digest } from '@/components/project/digest'
 import { Feed } from '@/components/project/feed'
@@ -39,7 +39,10 @@ export function ProjectPage() {
   const [entries, setEntries] = useState<IREntry[]>([])
   const [requests, setRequests] = useState<ChangeRequest[]>([])
   const [digest, setDigest] = useState<IREntry[]>([])
-  const [pending, setPending] = useState<InputResult | null>(null)
+  // Split on purpose: an answer is something to read, a proposal is a decision
+  // to make, so they get different weight in the UI.
+  const [answer, setAnswer] = useState<{ question: string; text: string } | null>(null)
+  const [proposal, setProposal] = useState<InputResult | null>(null)
 
   const [segments, setSegments] = useState<Segment[]>([])
   const [summaryLoading, setSummaryLoading] = useState(false)
@@ -158,19 +161,23 @@ export function ProjectPage() {
     }
   }
 
-  async function handleSend(text: string, kind?: 'changeset' | 'answer') {
+  async function handleSend(text: string) {
     if (!projectId) return
-    const result = await run(() => api.sendInput(projectId, text, kind))
-    if (result) setPending(result)
+    const result = await run(() => api.sendInput(projectId, text))
+    if (!result) return
+
+    // A message can do both, so neither clears the other.
+    setAnswer(result.answer ? { question: text, text: result.answer } : null)
+    setProposal(result.operations.length || result.dropped ? result : null)
   }
 
-  async function handleConfirm(operations: Operation[]) {
-    if (!projectId || pending?.kind !== 'changeset') return
+  async function handleAccept(operations: Operation[]) {
+    if (!projectId || !proposal) return
     const done = await run(() =>
-      api.confirmChangeset(projectId, pending.text, operations),
+      api.acceptChanges(projectId, proposal.text, operations),
     )
     if (done) {
-      setPending(null)
+      setProposal(null)
       refresh()
     }
   }
@@ -214,6 +221,26 @@ export function ProjectPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <PendingRequests
+              requests={requests}
+              members={members}
+              entriesById={entriesById}
+              currentUserId={profile?.id ?? ''}
+              isAdmin={viewerIsAdmin}
+              busy={busy}
+              onApprove={(id) =>
+                projectId &&
+                run(() => api.approveRequest(projectId, id)).then(refresh)
+              }
+              onReject={(id) =>
+                projectId &&
+                run(() => api.rejectRequest(projectId, id)).then(refresh)
+              }
+              onEdit={(id, operation) =>
+                projectId &&
+                run(() => api.editRequest(projectId, id, operation)).then(refresh)
+              }
+            />
             <MembersPopover
               members={members}
               currentUserId={profile?.id ?? ''}
@@ -243,30 +270,10 @@ export function ProjectPage() {
 
         {error && <p className="text-destructive shrink-0 text-sm">{error}</p>}
 
-        {/* Notices are secondary to the panel, so they get a capped share of
-            the height and scroll inside it rather than squeezing it out. */}
-        {(digest.length > 0 || requests.length > 0) && (
-          <div className="flex max-h-[35%] shrink-0 flex-col gap-4 overflow-y-auto">
+        {/* Capped so a long digest can't squeeze the panel out. */}
+        {digest.length > 0 && (
+          <div className="max-h-[35%] shrink-0 overflow-y-auto">
             <Digest entries={digest} members={members} onDismiss={dismissDigest} />
-
-            <PendingRequests
-          requests={requests}
-          members={members}
-          entriesById={entriesById}
-          currentUserId={profile?.id ?? ''}
-          isAdmin={viewerIsAdmin}
-          busy={busy}
-          onApprove={(id) =>
-            projectId && run(() => api.approveRequest(projectId, id)).then(refresh)
-          }
-          onReject={(id) =>
-            projectId && run(() => api.rejectRequest(projectId, id)).then(refresh)
-          }
-              onEdit={(id, operations) =>
-                projectId &&
-                run(() => api.editRequest(projectId, id, operations)).then(refresh)
-              }
-            />
           </div>
         )}
 
@@ -306,34 +313,32 @@ export function ProjectPage() {
           />
         )}
 
-        {/* Sits directly above the composer — it's a response to what you just
-            typed, and it scrolls itself when the changeset is long. */}
-        {pending && (
-          <div className="max-h-[45%] shrink-0 overflow-y-auto">
-            {pending.kind === 'changeset' ? (
-              <ChangesetPreview
-                operations={pending.operations}
-                unresolved={pending.unresolved}
-                entriesById={entriesById}
-                busy={busy}
-                onConfirm={handleConfirm}
-                onDiscard={() => setPending(null)}
-              />
-            ) : (
-              <AnswerCard
-                question={pending.text}
-                segments={pending.segments}
-                busy={busy}
-                onDismiss={() => setPending(null)}
-                onTreatAsStatement={() => handleSend(pending.text, 'changeset')}
-              />
-            )}
+        {/* A reply to what you just asked, directly above the composer. */}
+        {answer && (
+          <div className="max-h-[40%] shrink-0 overflow-y-auto">
+            <AnswerCard
+              question={answer.question}
+              answer={answer.text}
+              onDismiss={() => setAnswer(null)}
+            />
           </div>
         )}
 
         <div className="shrink-0">
           <Composer busy={busy} onSend={handleSend} />
         </div>
+
+        {proposal && (
+          <ChangesetDialog
+            key={proposal.text}
+            operations={proposal.operations}
+            dropped={proposal.dropped}
+            entriesById={entriesById}
+            busy={busy}
+            onAccept={handleAccept}
+            onDiscard={() => setProposal(null)}
+          />
+        )}
       </div>
     </AppLayout>
   )

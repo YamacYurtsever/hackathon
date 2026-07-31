@@ -2,15 +2,14 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import type { InputKind } from '@/types/ir'
 
-/** One box for both saying and asking — the backend decides which it was. */
+/** One box for both saying and asking — a message can be either or both. */
 export function Composer({
   busy,
   onSend,
 }: {
   busy: boolean
-  onSend: (text: string, kind?: InputKind) => void
+  onSend: (text: string) => void
 }) {
   const [text, setText] = useState('')
 

@@ -1,7 +1,6 @@
 import type {
   ChangeRequest,
   IREntry,
-  InputKind,
   InputResult,
   Member,
   Operation,
@@ -92,12 +91,11 @@ export const api = {
   exitProject: (id: string) =>
     request<void>(`/projects/${id}/exit`, { method: 'POST' }),
 
-  // One box, two outcomes: a statement comes back as a changeset to confirm, a
-  // question as an answer. `kind` forces one path when the user overrides.
-  sendInput: (id: string, text: string, kind?: InputKind) =>
+  // One box: a message may propose changes, answer a question, or both.
+  sendInput: (id: string, text: string) =>
     request<InputResult>(`/projects/${id}/input`, {
       method: 'POST',
-      body: JSON.stringify({ text, kind }),
+      body: JSON.stringify({ text }),
     }),
 
   getView: (id: string) => request<Summary>(`/projects/${id}/view`),
@@ -111,21 +109,22 @@ export const api = {
 
   listRequests: (id: string) => request<ChangeRequest[]>(`/projects/${id}/requests`),
 
-  // The author confirming our reading — the first point anything is stored.
-  confirmChangeset: (id: string, text: string, operations: Operation[]) =>
-    request<ChangeRequest>(`/projects/${id}/requests`, {
+  // The author accepting our reading — the first point anything is stored.
+  // Each accepted operation becomes its own request.
+  acceptChanges: (id: string, text: string, operations: Operation[]) =>
+    request<ChangeRequest[]>(`/projects/${id}/requests`, {
       method: 'POST',
       body: JSON.stringify({ text, operations }),
     }),
 
-  editRequest: (id: string, requestId: string, operations: Operation[]) =>
+  editRequest: (id: string, requestId: string, operation: Operation) =>
     request<ChangeRequest>(`/projects/${id}/requests/${requestId}`, {
       method: 'PUT',
-      body: JSON.stringify({ operations }),
+      body: JSON.stringify({ operation }),
     }),
 
   approveRequest: (id: string, requestId: string) =>
-    request<{ applied: string[] }>(`/projects/${id}/requests/${requestId}/approve`, {
+    request<{ applied: string }>(`/projects/${id}/requests/${requestId}/approve`, {
       method: 'POST',
     }),
 

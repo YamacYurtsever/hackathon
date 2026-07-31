@@ -53,15 +53,15 @@ CREATE TABLE IF NOT EXISTS project_entries (
     UNIQUE(project_id, entry_id)
 );
 
--- A confirmed changeset waiting on an admin. Operations live as a JSON blob:
--- they're read and written whole, never queried into.
+-- One proposed change waiting on an admin. A message that proposes three things
+-- makes three requests, so each can be accepted or rejected on its own.
 CREATE TABLE IF NOT EXISTS requests (
     id          TEXT PRIMARY KEY,
     project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     author      TEXT NOT NULL,
     created_at  TEXT NOT NULL,
     source_text TEXT NOT NULL,
-    operations  TEXT NOT NULL
+    operation   TEXT NOT NULL
 );
 """
 
@@ -322,12 +322,12 @@ def _request_from_row(row: sqlite3.Row) -> dict:
         "author": row["author"],
         "created_at": row["created_at"],
         "source_text": row["source_text"],
-        "operations": json.loads(row["operations"]),
+        "operation": json.loads(row["operation"]),
     }
 
 
 def create_request(
-    project_id: str, author: str, source_text: str, operations: list[dict]
+    project_id: str, author: str, source_text: str, operation: dict
 ) -> dict:
     request = {
         "id": _new_id(),
@@ -335,11 +335,11 @@ def create_request(
         "author": author,
         "created_at": _now(),
         "source_text": source_text,
-        "operations": operations,
+        "operation": operation,
     }
     with _connect() as conn:
         conn.execute(
-            """INSERT INTO requests (id, project_id, author, created_at, source_text, operations)
+            """INSERT INTO requests (id, project_id, author, created_at, source_text, operation)
                VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 request["id"],
@@ -347,7 +347,7 @@ def create_request(
                 author,
                 request["created_at"],
                 source_text,
-                json.dumps(operations),
+                json.dumps(operation),
             ),
         )
     return request
@@ -368,11 +368,11 @@ def requests_for_project(project_id: str) -> list[dict]:
     return [_request_from_row(row) for row in rows]
 
 
-def update_request_operations(request_id: str, operations: list[dict]) -> dict | None:
+def update_request_operation(request_id: str, operation: dict) -> dict | None:
     with _connect() as conn:
         conn.execute(
-            "UPDATE requests SET operations = ? WHERE id = ?",
-            (json.dumps(operations), request_id),
+            "UPDATE requests SET operation = ? WHERE id = ?",
+            (json.dumps(operation), request_id),
         )
     return get_request(request_id)
 
@@ -382,62 +382,51 @@ def delete_request(request_id: str) -> None:
         conn.execute("DELETE FROM requests WHERE id = ?", (request_id,))
 
 
-def apply_request(request_id: str) -> tuple[list[str], str | None]:
-    """Applies every operation in a request, then deletes it.
+def apply_request(request_id: str) -> tuple[str | None, str | None]:
+    """Applies a request's operation, then deletes it.
 
-    All or nothing: an update naming an entry that has since vanished aborts the
-    whole changeset rather than silently applying as a create. Returns the
-    affected entry ids, or an error message with nothing written.
+    Returns the affected entry id, or an error message with nothing written —
+    an update naming an entry that has since vanished is refused rather than
+    silently landing as a create.
     """
     request = get_request(request_id)
     if request is None:
-        return [], "request not found"
+        return None, "request not found"
 
-    affected = []
+    operation = request["operation"]
     with _connect() as conn:
-        existing = {
-            row["entry_id"]
-            for row in conn.execute(
-                "SELECT entry_id FROM project_entries WHERE project_id = ?",
-                (request["project_id"],),
+        if operation.get("op") == "update":
+            target_id = operation.get("target_id")
+            present = conn.execute(
+                "SELECT 1 FROM project_entries WHERE project_id = ? AND entry_id = ?",
+                (request["project_id"], target_id),
+            ).fetchone()
+            if present is None:
+                conn.rollback()
+                return None, f"entry {target_id} is no longer in this project"
+
+            conn.execute(
+                "UPDATE entries SET content = ?, author = ?, created_at = ? WHERE id = ?",
+                (
+                    json.dumps(operation["content"]),
+                    # The proposer, not whichever admin approved or edited it.
+                    request["author"],
+                    _now(),
+                    target_id,
+                ),
             )
-        }
-
-        for operation in request["operations"]:
-            if operation.get("op") == "update":
-                target_id = operation.get("target_id")
-                if target_id not in existing:
-                    conn.rollback()
-                    return [], f"entry {target_id} is no longer in this project"
-
-                conn.execute(
-                    "UPDATE entries SET content = ?, author = ?, created_at = ? WHERE id = ?",
-                    (
-                        json.dumps(operation["content"]),
-                        # The proposer, not whichever admin approved or edited it.
-                        request["author"],
-                        _now(),
-                        target_id,
-                    ),
-                )
-                affected.append(target_id)
-            else:
-                entry_id = _new_id()
-                conn.execute(
-                    "INSERT INTO entries (id, content, author, created_at) VALUES (?, ?, ?, ?)",
-                    (
-                        entry_id,
-                        json.dumps(operation["content"]),
-                        request["author"],
-                        _now(),
-                    ),
-                )
-                conn.execute(
-                    "INSERT INTO project_entries (project_id, entry_id) VALUES (?, ?)",
-                    (request["project_id"], entry_id),
-                )
-                affected.append(entry_id)
+            entry_id = target_id
+        else:
+            entry_id = _new_id()
+            conn.execute(
+                "INSERT INTO entries (id, content, author, created_at) VALUES (?, ?, ?, ?)",
+                (entry_id, json.dumps(operation["content"]), request["author"], _now()),
+            )
+            conn.execute(
+                "INSERT INTO project_entries (project_id, entry_id) VALUES (?, ?)",
+                (request["project_id"], entry_id),
+            )
 
         conn.execute("DELETE FROM requests WHERE id = ?", (request_id,))
 
-    return affected, None
+    return entry_id, None

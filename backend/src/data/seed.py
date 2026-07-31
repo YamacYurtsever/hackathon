@@ -1,6 +1,6 @@
 from werkzeug.security import generate_password_hash
 
-import store
+from . import store
 
 # Content is free-form by design — these are just examples of what someone might
 # write about themselves. Nothing in the pipeline reads a fixed "role" key. The

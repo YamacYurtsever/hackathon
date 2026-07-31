@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
-import store
-from auth import current_profile, login_required
+from data import store
+from .auth import current_profile, login_required
 
 bp = Blueprint("profiles", __name__)
 

@@ -1,6 +1,6 @@
 import pytest
 
-import store
+from data import store
 from app import create_app
 
 

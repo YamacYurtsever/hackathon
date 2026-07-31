@@ -54,20 +54,15 @@ export interface Operation {
   content: Record<string, unknown>
 }
 
-// Something the message gestured at but didn't pin down. Surfaced, not invented.
-export interface Unresolved {
-  quote: string
-  issue: string
-}
-
-// A confirmed changeset waiting on an admin.
+// One proposed change waiting on an admin. A message proposing three things
+// makes three requests, so each can be accepted or rejected on its own.
 export interface ChangeRequest {
   id: string
   project_id: string
   author: string
   created_at: string
   source_text: string
-  operations: Operation[]
+  operation: Operation
 }
 
 // Prose is returned as segments so it reads continuously while every clause
@@ -82,15 +77,12 @@ export interface Summary {
   cached: boolean
 }
 
-export type InputKind = 'changeset' | 'answer'
-
-// One input box, two outcomes — neither stores anything on its own.
-export type InputResult =
-  | {
-      kind: 'changeset'
-      text: string
-      operations: Operation[]
-      unresolved: Unresolved[]
-      rejected: unknown[]
-    }
-  | { kind: 'answer'; text: string; segments: Segment[] }
+// What one message turned out to be. It can propose changes, answer a
+// question, or both — nothing is stored either way.
+export interface InputResult {
+  text: string
+  operations: Operation[]
+  answer: string | null
+  /** Operations the server threw away as unusable, so nothing vanishes silently. */
+  dropped: number
+}

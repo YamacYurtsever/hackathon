@@ -1,25 +1,20 @@
 """Read and write paths. The model is stubbed — these test our logic, not its
-judgement; `eval_extraction.py` is where prompt quality gets judged.
+judgement.
 """
 
 from urllib.parse import quote
 
 import pytest
 
-import pipeline
-import reprojection
-import store
+from ai import reprojection
+from data import store
+from routes import pipeline
 
 SOURCE = "Bumped sampling rate to 2kHz."
 
 
 def content(**overrides) -> dict:
-    base = {
-        "statement": "The sampling rate was raised to 2 kHz.",
-        "subject": "sampling rate",
-        "source_quote": "Bumped sampling rate to 2kHz",
-        "certainty": "stated",
-    }
+    base = {"statement": "The sampling rate was raised to 2 kHz."}
     base.update(overrides)
     return base
 
@@ -35,27 +30,17 @@ def project(client, signed_up):
 @pytest.fixture
 def stub_model(monkeypatch):
     """Replaces every model call with something deterministic."""
-    calls = {"classify": 0, "extract": 0, "answer": 0, "summarize": 0}
+    calls = {"read": 0, "summarize": 0}
 
-    def fake_classify(text, model=None):
-        calls["classify"] += 1
-        return "question" if text.strip().endswith("?") else "statement"
-
-    def fake_extract(text, profile=None, existing=None, model=None):
-        calls["extract"] += 1
+    def fake_read(text, profile=None, existing=None, model=None):
+        calls["read"] += 1
+        asked = text.strip().endswith("?")
         return {
-            "operations": [{"op": "create", "content": content()}],
-            "unresolved": [],
-            "rejected": [],
-            "diagnostics": {},
-        }
-
-    def fake_answer(question, entries, profile, model=None):
-        calls["answer"] += 1
-        ids = [entry["id"] for entry in entries]
-        return {
-            "segments": [{"text": "An answer.", "source_entry_ids": ids[:1]}] if ids else [],
-            "diagnostics": {},
+            # A question-only message proposes nothing; anything else proposes
+            # one change. Both together when it does both.
+            "operations": [] if asked else [{"op": "create", "content": content()}],
+            "answer": "An answer." if asked else None,
+            "dropped": 0,
         }
 
     def fake_summarize(entries, profile, model=None):
@@ -63,40 +48,42 @@ def stub_model(monkeypatch):
         ids = [entry["id"] for entry in entries]
         return {
             "segments": [{"text": "A summary.", "source_entry_ids": ids[:1]}],
-            "diagnostics": {},
         }
 
-    monkeypatch.setattr(pipeline, "classify", fake_classify)
-    monkeypatch.setattr(pipeline, "extract_changeset", fake_extract)
-    monkeypatch.setattr(reprojection, "answer", fake_answer)
+    monkeypatch.setattr(pipeline, "interpret_message", fake_read)
     monkeypatch.setattr(pipeline.reprojection, "summarize", fake_summarize)
     reprojection._cache.clear()
     return calls
 
 
 def approve_a_change(client, project_id, operations=None):
-    """Runs a changeset through confirm + approve, returning the new entry ids."""
-    request = client.post(
+    """Accepts and approves changes, returning the affected entry ids."""
+    requests = client.post(
         f"/api/projects/{project_id}/requests",
         json={
             "text": SOURCE,
             "operations": operations or [{"op": "create", "content": content()}],
         },
     ).get_json()
-    return client.post(
-        f"/api/projects/{project_id}/requests/{request['id']}/approve"
-    ).get_json()["applied"]
+    return [
+        client.post(
+            f"/api/projects/{project_id}/requests/{pending['id']}/approve"
+        ).get_json()["applied"]
+        for pending in requests
+    ]
 
 
 # --- input: one box, two paths ---
 
 
-def test_statement_returns_a_changeset_and_stores_nothing(client, project, stub_model):
+def test_statement_proposes_changes_and_stores_nothing(client, project, stub_model):
     response = client.post(f"/api/projects/{project['id']}/input", json={"text": SOURCE})
 
     assert response.status_code == 200
-    assert response.get_json()["kind"] == "changeset"
-    # Nothing lands until the author confirms.
+    body = response.get_json()
+    assert len(body["operations"]) == 1
+    assert body["answer"] is None
+    # Nothing lands until the author accepts.
     assert store.entries_for_project(project["id"]) == []
     assert store.requests_for_project(project["id"]) == []
 
@@ -109,19 +96,17 @@ def test_question_returns_an_answer(client, project, stub_model):
     )
 
     body = response.get_json()
-    assert body["kind"] == "answer"
-    assert body["segments"][0]["text"] == "An answer."
+    assert body["answer"] == "An answer."
+    # A question proposes nothing.
+    assert body["operations"] == []
 
 
-def test_kind_override_beats_the_classifier(client, project, stub_model):
-    # "treat it as the other thing" — a question forced down the statement path.
-    response = client.post(
-        f"/api/projects/{project['id']}/input",
-        json={"text": "what changed?", "kind": "changeset"},
-    )
+def test_one_call_covers_both_paths(client, project, stub_model):
+    # No classifier to disagree with: a message that states and asks does both.
+    client.post(f"/api/projects/{project['id']}/input", json={"text": SOURCE})
+    client.post(f"/api/projects/{project['id']}/input", json={"text": "what changed?"})
 
-    assert response.get_json()["kind"] == "changeset"
-    assert stub_model["classify"] == 0
+    assert stub_model["read"] == 2
 
 
 def test_input_requires_text(client, project, stub_model):
@@ -143,7 +128,7 @@ def test_non_member_cannot_use_input(client, project, signed_up, stub_model):
 # --- write path ---
 
 
-def test_confirming_creates_a_pending_request_even_for_an_admin(client, project, stub_model):
+def test_accepting_creates_a_pending_request_even_for_an_admin(client, project, stub_model):
     response = client.post(
         f"/api/projects/{project['id']}/requests",
         json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
@@ -155,12 +140,52 @@ def test_confirming_creates_a_pending_request_even_for_an_admin(client, project,
     assert store.entries_for_project(project["id"]) == []
 
 
+def test_each_proposed_change_becomes_its_own_request(client, project, stub_model):
+    # So an admin can approve one and reject another, rather than being handed
+    # a bundle to take or leave.
+    created = client.post(
+        f"/api/projects/{project['id']}/requests",
+        json={
+            "text": SOURCE,
+            "operations": [
+                {"op": "create", "content": content(statement="First.")},
+                {"op": "create", "content": content(statement="Second.")},
+            ],
+        },
+    ).get_json()
+
+    assert len(created) == 2
+    pending = store.requests_for_project(project["id"])
+    assert len(pending) == 2
+    assert {p["operation"]["content"]["statement"] for p in pending} == {"First.", "Second."}
+
+
+def test_one_request_can_be_approved_while_another_is_rejected(client, project, stub_model):
+    first, second = client.post(
+        f"/api/projects/{project['id']}/requests",
+        json={
+            "text": SOURCE,
+            "operations": [
+                {"op": "create", "content": content(statement="Keep this.")},
+                {"op": "create", "content": content(statement="Drop this.")},
+            ],
+        },
+    ).get_json()
+
+    client.post(f"/api/projects/{project['id']}/requests/{first['id']}/approve")
+    client.post(f"/api/projects/{project['id']}/requests/{second['id']}/reject")
+
+    entries = store.entries_for_project(project["id"])
+    assert [entry["content"]["statement"] for entry in entries] == ["Keep this."]
+    assert store.requests_for_project(project["id"]) == []
+
+
 def test_approving_applies_the_changeset_and_clears_the_request(client, project, stub_model):
     applied = approve_a_change(client, project["id"])
 
     entries = store.entries_for_project(project["id"])
     assert [entry["id"] for entry in entries] == applied
-    assert entries[0]["content"]["subject"] == "sampling rate"
+    assert entries[0]["content"]["statement"] == content()["statement"]
     assert store.requests_for_project(project["id"]) == []
 
 
@@ -169,7 +194,7 @@ def test_applied_entry_is_authored_by_the_proposer(client, project, signed_up, s
     client.post("/api/logout")
     bob = signed_up("bob")
     client.post(f"/api/projects/{project['id']}/join")
-    request = client.post(
+    [request] = client.post(
         f"/api/projects/{project['id']}/requests",
         json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
     ).get_json()
@@ -185,7 +210,7 @@ def test_non_admin_cannot_approve(client, project, signed_up, stub_model):
     client.post("/api/logout")
     signed_up("bob")
     client.post(f"/api/projects/{project['id']}/join")
-    request = client.post(
+    [request] = client.post(
         f"/api/projects/{project['id']}/requests",
         json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
     ).get_json()
@@ -214,30 +239,27 @@ def test_update_operation_revises_in_place(client, project, stub_model):
     assert entries[0]["content"]["statement"] == "Now 4 kHz."
 
 
-def test_update_targeting_a_vanished_entry_applies_nothing(client, project, stub_model):
-    request = client.post(
-        f"/api/projects/{project['id']}/requests",
-        json={
-            "text": SOURCE,
-            "operations": [
-                {"op": "create", "content": content()},
-                {"op": "update", "target_id": "ghost", "content": content()},
-            ],
-        },
-    ).get_json()
+def test_update_targeting_a_vanished_entry_is_refused(client, project, stub_model):
+    # It can't be created at accept time, so plant it straight into the store.
+    pending = store.create_request(
+        project["id"],
+        author=project["owner"]["id"],
+        source_text=SOURCE,
+        operation={"op": "update", "target_id": "ghost", "content": content()},
+    )
 
     response = client.post(
-        f"/api/projects/{project['id']}/requests/{request['id']}/approve"
+        f"/api/projects/{project['id']}/requests/{pending['id']}/approve"
     )
 
     assert response.status_code == 409
-    # All or nothing: the create alongside it must not have landed either.
+    # Refused rather than quietly landing as a create.
     assert store.entries_for_project(project["id"]) == []
     assert len(store.requests_for_project(project["id"])) == 1
 
 
 def test_rejecting_deletes_the_request(client, project, stub_model):
-    request = client.post(
+    [request] = client.post(
         f"/api/projects/{project['id']}/requests",
         json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
     ).get_json()
@@ -253,42 +275,48 @@ def test_rejecting_deletes_the_request(client, project, stub_model):
 
 
 def test_author_can_edit_their_pending_request(client, project, stub_model):
-    request = client.post(
+    [request] = client.post(
         f"/api/projects/{project['id']}/requests",
         json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
     ).get_json()
 
     response = client.put(
         f"/api/projects/{project['id']}/requests/{request['id']}",
-        json={"operations": [{"op": "create", "content": content(statement="Corrected.")}]},
+        json={"operation": {"op": "create", "content": content(statement="Corrected.")}},
     )
 
     assert response.status_code == 200
-    assert response.get_json()["operations"][0]["content"]["statement"] == "Corrected."
+    assert response.get_json()["operation"]["content"]["statement"] == "Corrected."
 
 
 def test_hand_edits_are_validated_too(client, project, stub_model):
-    # The editable path must not become a hole in the grounding guardrail.
-    request = client.post(
+    # The editable path skips the model, so it must not skip the model's checks.
+    [request] = client.post(
         f"/api/projects/{project['id']}/requests",
         json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
     ).get_json()
 
-    response = client.put(
-        f"/api/projects/{project['id']}/requests/{request['id']}",
-        json={
-            "operations": [
-                {"op": "create", "content": content(source_quote="never said this")}
-            ]
-        },
+    # An update aimed at an entry that doesn't exist would land as a create.
+    assert (
+        client.put(
+            f"/api/projects/{project['id']}/requests/{request['id']}",
+            json={"operation": {"op": "update", "target_id": "ghost", "content": content()}},
+        ).status_code
+        == 400
     )
 
-    assert response.status_code == 400
-    assert any("not verbatim" in problem for problem in response.get_json()["problems"])
+    # A statement is the one thing every entry needs to be displayable.
+    assert (
+        client.put(
+            f"/api/projects/{project['id']}/requests/{request['id']}",
+            json={"operation": {"op": "create", "content": {"note": "no statement"}}},
+        ).status_code
+        == 400
+    )
 
 
 def test_stranger_cannot_edit_someone_elses_request(client, project, signed_up, stub_model):
-    request = client.post(
+    [request] = client.post(
         f"/api/projects/{project['id']}/requests",
         json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
     ).get_json()
@@ -299,7 +327,7 @@ def test_stranger_cannot_edit_someone_elses_request(client, project, signed_up, 
 
     response = client.put(
         f"/api/projects/{project['id']}/requests/{request['id']}",
-        json={"operations": [{"op": "create", "content": content()}]},
+        json={"operation": {"op": "create", "content": content()}},
     )
     assert response.status_code == 403
 

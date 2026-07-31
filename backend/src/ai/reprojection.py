@@ -9,7 +9,7 @@ and the traceability is enforced here, not asked for in the prompt.
 import hashlib
 import json
 
-import mistral_client
+from . import mistral
 
 _SEGMENT_CONTRACT = """Return {"segments": [{"text": "...", "source_entry_ids": ["..."]}]}.
 
@@ -112,16 +112,13 @@ def keep_grounded_segments(segments: list, valid_ids: set[str]) -> list[dict]:
 
 
 def _generate(system: str, user: str, entries: list[dict], model: str | None) -> dict:
-    result = mistral_client.complete_json(
-        system=system, user=user, model=model or mistral_client.DEFAULT_MODEL
+    result = mistral.complete_json(
+        system=system, user=user, model=model or mistral.DEFAULT_MODEL
     )
     segments = keep_grounded_segments(
         result.data.get("segments"), {entry["id"] for entry in entries}
     )
-    return {
-        "segments": segments,
-        "diagnostics": {"latency_ms": result.latency_ms, "model": result.model},
-    }
+    return {"segments": segments}
 
 
 def summarize(entries: list[dict], profile: dict | None, model: str | None = None) -> dict:

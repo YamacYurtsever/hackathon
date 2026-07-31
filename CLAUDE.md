@@ -147,12 +147,9 @@ Pure backend — no UI yet. Exercised via the API client and curl. Prove the pip
 
 **Backend**
 
-- [X] Intent classification: is this input a statement of fact or a question? Cheap first pass, since the two paths diverge completely
-- [X] `POST /projects/:id/input` — one endpoint behind the single input box. Returns either `{kind: "changeset", …}` (statement → proposed changes, **nothing stored**) or `{kind: "answer", …}` (question → grounded answer, nothing stored)
-- [X] Accept an optional `kind` override on that endpoint, so the UI's "treat it as the other thing" doesn't need a second route
-- [X] Extraction prompt: NL statement + existing project IR → a changeset of operations, `create` and/or `update` — one message can add a fact and revise an old one at once
+- [X] `POST /projects/:id/input` — one endpoint behind the single input box. Returns `{operations, answer, dropped}` and stores **nothing**. No classifier: one call handles a statement, a question, or both at once
+- [X] Interpretation prompt: NL message + existing project IR → operations (`create` and/or `update`) plus an answer — one message can add a fact, revise an old one, and ask something
 - [X] `update` operations name the entry they revise and carry the new `content`, so the UI can diff old against new
-- [X] Answer prompt: question + viewer's profile + project IR → grounded prose answer with sources
 - [X] Re-projection prompt: IR entries + viewer's profile `content` → cohesive summary as `{text, source_entry_ids}` segments
 - [X] Re-projection **filters**: entries irrelevant to the viewer are omitted entirely, not restated blandly. Choosing what to leave out is part of the job
 - [X] Re-projection surfaces implications, including ones spanning several entries — not just a restatement of each fact
@@ -161,20 +158,20 @@ Pure backend — no UI yet. Exercised via the API client and curl. Prove the pip
 
 **Write path (the only way the IR changes)**
 
-- [X] `POST /projects/:id/requests` — author confirms a changeset; stored as a pending request. This is the first point anything is persisted
+- [X] `POST /projects/:id/requests` — author accepts proposed changes; **each becomes its own request**, so an admin can approve one and reject another instead of being handed a bundle to take or leave. First point anything is persisted
 - [X] `GET /projects/:id/requests` — pending requests for the project
-- [X] `PUT /projects/:id/requests/:rid` — hand-edit a pending request's operations. Allowed for its author and for admins
+- [X] `PUT /projects/:id/requests/:rid` — hand-edit a pending request's operation. Allowed for its author and for admins
 - [X] An applied entry's `author` is the original proposer, never the admin who edited it — editing isn't authorship
-- [X] Confirming always creates a request, even when the author is an admin — one path, and the approval step stays demoable
-- [X] `POST /projects/:id/requests/:rid/approve` / `…/reject` — admin only, enforced server-side, no exceptions. Approving applies every operation in the changeset atomically
+- [X] Accepting always creates a request, even when the author is an admin — one path, and the approval step stays demoable
+- [X] `POST /projects/:id/requests/:rid/approve` / `…/reject` — admin only, enforced server-side, no exceptions. One request carries one change, so there's nothing to apply partially
 - [X] Rejecting deletes the request; a rejected proposal isn't a fact and doesn't belong in history
 - [X] Reject an `update` whose target entry no longer exists rather than silently recreating it
 
 **Grounding (verify in code, don't trust the prompt)**
 
-- [X] Every claim carries its sources: which IR entries, and where in their `content`
+- [X] Every summary segment carries its sources: the IR entries it drew on
 - [X] A claim may cite **several** entries — a synthesis like "timeline slips ~2 weeks" can legitimately draw on three facts, and forcing a single source would misrepresent it
-- [X] Resolve every cited path against the actual entry server-side; drop claims whose citations don't resolve. The model will happily invent a plausible-looking path, so this has to be a code check, not a prompt instruction
+- [X] Resolve every cited id against the project's actual entries server-side; drop segments whose citations don't resolve. The model will happily cite an id that doesn't exist, so this has to be a code check, not a prompt instruction
 
 **Known gap this leaves.** Citation checking proves a segment *points* at real entries; it can't prove the text only says what those entries support. Live output already shows the difference — a summary cited two real entries and still slipped in "from the typical 1 kHz baseline for this device class", which no entry states. Closing that is the meaning-preservation pass in milestone 9, and until then the honest claim is "every claim is traceable", not "every claim is verified".
 
@@ -229,38 +226,42 @@ Summary — cohesive prose, for you     IR — the complete record
 
 This is the demo in one gesture: read a paragraph written for you, flip, and see the neutral facts it was built from — then switch profiles and watch the prose change while those facts don't.
 
-**One input, not two.** Splitting "post a fact" from "ask a question" makes people classify their own thought before typing. There's a single box and the backend decides: a statement becomes a change to the IR, a question gets a grounded answer. *"Bumped sampling rate to 2kHz"* is a fact; *"does that affect my filing?"* is a question — you shouldn't have to tell us which.
+**One input, not two.** Splitting "post a fact" from "ask a question" makes people classify their own thought before typing. There's a single box, and one call reads the message for both: proposed changes to the IR, and an answer if it asked something.
 
-Misclassification hurts in both directions, so it can't be silent: a fact swallowed as a question never gets recorded, and a question stored as a fact pollutes the IR. The UI always says which happened, and offers a one-click "no, treat it as the other thing".
+Crucially it can be *both*. *"We settled on 4kHz — does that change what we file?"* is a fact and a question at once; a classifier picking one would silently lose the other half. Nothing is classified, so nothing is misclassified.
 
-### The write path: changeset → author confirms → admin approves
+### The write path: proposal → author accepts → admin approves
 
-A statement doesn't become an entry directly. Extraction produces a **changeset** — one message can create a new entry *and* amend existing ones, and often does: *"actually we settled on 4kHz, and that pushes validation another week"* both revises a recorded fact and adds a new one. Then two gates before anything lands:
+A statement doesn't become an entry directly. Reading a message produces **proposed changes** — one message can create a new entry *and* amend existing ones, and often does: *"actually we settled on 4kHz, and that pushes validation another week"* both revises a recorded fact and adds a new one. Each proposal is reviewed on its own, then passes two gates before it lands:
 
 ```
 "bumped sampling to 4kHz,
  pushes validation a week"
-        ↓  extraction
+        ↓  read as proposals
 ┌─────────────────────────────┐
-│ Proposed changes            │   ← nothing stored yet
-│ • UPDATE sampling_rate      │
-│     2kHz → 4kHz             │
-│ • NEW validation_window     │
-│     +1 week                 │
-│        [ NL │ IR ]          │   ← same toggle idea
-│  [confirm] [edit] [discard] │
+│ Here's what we understood   │   ← nothing stored yet
+│ ┌─────────────────────────┐ │
+│ │ revises an existing fact│ │
+│ │ ~~2kHz~~ → 4kHz         │ │
+│ │      [edit] [drop]      │ │
+│ ├─────────────────────────┤ │
+│ │ new fact                │ │
+│ │ validation +1 week      │ │
+│ │      [edit] [drop]      │ │
+│ └─────────────────────────┘ │
+│    [ send 2 for approval ]  │
 └─────────────────────────────┘
-        ↓  author confirms
-   pending request on the project
-        ↓  admin approves
+        ↓  author accepts
+  one pending request per change
+        ↓  admin approves each
       applied to the IR
 ```
 
-**Gate 1 — the author confirms.** Extraction is a guess at what someone meant, so they get to see it before anyone else does: *"here's what I understood."* Nothing is stored until they confirm, so an unconfirmed misread leaves no trace. This is also where the NL/IR toggle earns its keep a second time — read the change as plain language or as a raw diff of `content`.
+**Gate 1 — the author accepts.** Our reading is a guess at what someone meant, so they see it before anyone else does: *"here's what we understood."* Each proposal is kept, edited, or dropped on its own — a message often says several things and you shouldn't have to take them as a bundle. Nothing is stored until they accept, so a misread they discard leaves no trace.
 
-**Gate 2 — an admin approves.** Confirmed changesets become pending requests on the project. Only an admin can apply them, and that's not optional. This is the one place the IR can be written, so it's the one place that needs a gate.
+**Gate 2 — an admin approves.** Each accepted proposal becomes its own pending request. Only an admin can apply one, and that's not optional. This is the one place the IR can be written, so it's the one place that needs a gate — and because a request carries a single change, an admin can approve one and reject another rather than being handed all-or-nothing.
 
-**Both gates allow hand-editing.** At gate 1 the author can correct our reading before submitting; at gate 2 an admin can fix a small error instead of rejecting and making someone retype. Editing means editing the raw `content` — so IR mode of the diff view is the editable one, which doubles as the escape hatch when extraction misfires during a live demo.
+**Both gates allow hand-editing.** At gate 1 the author can correct our reading before submitting; at gate 2 an admin can fix a small error instead of rejecting and making someone retype. Editing means editing the raw `content`, which doubles as the escape hatch when the model misfires during a live demo.
 
 An edited request doesn't reassign authorship: the applied entry's `author` stays the original proposer. We deliberately don't track *who* edited it — that only pays off alongside persistent request history, which is a Depth item we may not reach. Add it then, not speculatively.
 
@@ -282,7 +283,7 @@ The writing half — getting facts *into* the project and seeing them land. Buil
 **Frontend**
 
 - [X] Single input box, always visible below the panel — posts to `/input`, shows a working state while Mistral runs
-- [X] Result is never ambiguous: say whether the input was read as a fact or answered as a question, with a one-click "treat it as the other thing"
+- [X] Result is never ambiguous: proposed changes and any answer both shown, and a count of anything the server had to discard rather than losing it silently
 - [X] Feed: chat-style timeline, one row per IR entry — time, author username, the structured fact rendered readably
 - [X] An entry expands to its raw `content` JSON for anyone who wants the unvarnished version
 - [X] Feed refreshes after a change is applied, newest last (it reads as a conversation)
@@ -290,10 +291,10 @@ The writing half — getting facts *into* the project and seeing them land. Buil
 
 **Frontend — confirmation (gate 1)**
 
-- [X] Changeset preview after a statement: creates and updates listed together, updates shown as a diff of old vs new `content`
-- [X] NL/IR toggle on the preview — read the change as plain language or as the raw diff
-- [X] Confirm / edit / discard; discarding leaves nothing behind, since nothing was stored
-- [X] Editing is hand-editing the raw `content` in IR mode — the escape hatch when extraction gets it wrong
+- [X] Each proposed change previewed on its own — keep, edit, or drop individually before sending; updates shown as a diff of old vs new `content`
+- [X] Each change reads as plain language, with Edit revealing the raw `content` to fix by hand
+- [X] Keep / edit / drop each one; discarding leaves nothing behind, since nothing was stored
+- [X] Hand-editing is the escape hatch when the model gets it wrong
 - [X] Make it obvious this is *our reading* of what you said, not yet a fact
 
 **Frontend — approval (gate 2)**
@@ -341,7 +342,7 @@ The reading half — the same facts, re-projected through *your* context, plus a
 
 **Backend**
 
-The changeset/confirm/approve flow is no longer here — it became the core write path in 6 and 7.
+The propose/accept/approve flow is no longer here — it became the core write path in 6 and 7.
 
 - [ ] Meaning-preservation pass: prompt checks a summary segment against the entries it cites, flags drift/invention
 - [ ] Version history: append-only log of `{entry_id, content, author, created_at}` written on every applied update

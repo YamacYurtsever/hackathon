@@ -1,7 +1,7 @@
 """Tests for what persistence actually buys: state that outlives the process."""
 
-import store
-from seed import EXAMPLE_PROFILES, seed_medguard
+from data import store
+from data.seed import EXAMPLE_PROFILES, seed_medguard
 
 
 def test_data_survives_a_reconnect(tmp_path):

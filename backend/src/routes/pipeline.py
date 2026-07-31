@@ -1,18 +1,18 @@
 """The read and write paths over a project's IR.
 
 Read: `/view` re-projects the project for you, `/changes` reports what's new.
-Write: `/input` proposes a changeset, `/requests` stores it once you confirm,
-and only an admin can apply it. Nothing reaches the IR by any other route.
+Write: `/input` proposes changes and stores nothing, `/requests` persists the
+ones the author accepts — one request per change — and only an admin can apply
+them. Nothing reaches the IR by any other route.
 """
 
 from flask import Blueprint, jsonify, request
 
-import reprojection
-import store
-from auth import current_profile, login_required
-from extraction.classify import classify
-from extraction.extract import extract_changeset
-from extraction.validate import validate_operation
+from ai import reprojection
+from ai.interpret import interpret_message
+from ai.interpret.validate import clean_operation
+from data import store
+from .auth import current_profile, login_required
 
 bp = Blueprint("pipeline", __name__)
 
@@ -31,31 +31,22 @@ def _member_project(project_id: str) -> tuple[dict | None, tuple]:
 @login_required
 def project_input(project_id: str):
     """One endpoint behind the single input box. Nothing is stored here — a
-    statement comes back as a proposed changeset for the author to confirm."""
+    message comes back as proposed changes for the author to review, plus an
+    answer if it asked something. It can be both."""
     project, error = _member_project(project_id)
     if project is None:
         return error
 
-    body = request.get_json(silent=True) or {}
-    text = (body.get("text") or "").strip()
+    text = ((request.get_json(silent=True) or {}).get("text") or "").strip()
     if not text:
         return jsonify({"error": "text is required"}), 400
 
-    profile = current_profile()
-    entries = store.entries_for_project(project_id)
-
-    # An explicit override from the UI's "treat it as the other thing" wins over
-    # the classifier.
-    kind = body.get("kind")
-    if kind not in ("changeset", "answer"):
-        kind = "changeset" if classify(text) == "statement" else "answer"
-
-    if kind == "answer":
-        result = reprojection.answer(text, entries, profile)
-        return jsonify({"kind": "answer", "text": text, **result})
-
-    changeset = extract_changeset(text, profile=profile, existing=entries)
-    return jsonify({"kind": "changeset", "text": text, **changeset})
+    result = interpret_message(
+        text,
+        profile=current_profile(),
+        existing=store.entries_for_project(project_id),
+    )
+    return jsonify({"text": text, **result})
 
 
 @bp.get("/api/projects/<project_id>/view")
@@ -101,9 +92,10 @@ def project_changes(project_id: str):
 
 @bp.post("/api/projects/<project_id>/requests")
 @login_required
-def create_request(project_id: str):
-    """The author confirms a changeset. First point anything is persisted, and
-    always a request — being an admin doesn't skip the queue."""
+def create_requests(project_id: str):
+    """The author accepts some proposed changes. Each becomes its own request,
+    so an admin can approve one and reject another rather than being handed a
+    bundle to take or leave."""
     project, error = _member_project(project_id)
     if project is None:
         return error
@@ -113,12 +105,17 @@ def create_request(project_id: str):
     if not isinstance(operations, list) or not operations:
         return jsonify({"error": "operations must be a non-empty list"}), 400
 
-    created = store.create_request(
-        project_id,
-        author=current_profile()["id"],
-        source_text=(body.get("text") or "").strip(),
-        operations=operations,
-    )
+    entry_ids = set(project["ir"])
+    cleaned = [clean_operation(operation, entry_ids) for operation in operations]
+    if any(operation is None for operation in cleaned):
+        return jsonify({"error": "one or more operations are invalid"}), 400
+
+    source_text = (body.get("text") or "").strip()
+    author = current_profile()["id"]
+    created = [
+        store.create_request(project_id, author, source_text, operation)
+        for operation in cleaned
+    ]
     return jsonify(created), 201
 
 
@@ -149,22 +146,15 @@ def edit_request(project_id: str, request_id: str):
     if user_id != pending["author"] and user_id not in project["admins"]:
         return jsonify({"error": "only the author or an admin can edit this"}), 403
 
-    operations = (request.get_json(silent=True) or {}).get("operations")
-    if not isinstance(operations, list) or not operations:
-        return jsonify({"error": "operations must be a non-empty list"}), 400
+    # Hand-edits skip the model, so they skip its checks too — run them through
+    # the same ones, or the editable path becomes a hole in the guardrail.
+    operation = clean_operation(
+        (request.get_json(silent=True) or {}).get("operation"), set(project["ir"])
+    )
+    if operation is None:
+        return jsonify({"error": "operation is invalid"}), 400
 
-    # Hand-edits skip the model, so they skip its validation too — check them
-    # the same way, or the editable path becomes a hole in the guardrail.
-    entry_ids = set(project["ir"])
-    problems = [
-        problem
-        for operation in operations
-        for problem in validate_operation(operation, pending["source_text"], entry_ids)
-    ]
-    if problems:
-        return jsonify({"error": "invalid operations", "problems": problems}), 400
-
-    return jsonify(store.update_request_operations(request_id, operations))
+    return jsonify(store.update_request_operation(request_id, operation))
 
 
 @bp.post("/api/projects/<project_id>/requests/<request_id>/approve")
@@ -181,13 +171,13 @@ def approve_request(project_id: str, request_id: str):
     if pending is None or pending["project_id"] != project_id:
         return jsonify({"error": "request not found"}), 404
 
-    affected, failure = store.apply_request(request_id)
+    entry_id, failure = store.apply_request(request_id)
     if failure:
         return jsonify({"error": failure}), 409
 
     # Entries changed, so every cached summary of this project is stale.
     reprojection.invalidate_project(project_id)
-    return jsonify({"applied": affected})
+    return jsonify({"applied": entry_id})
 
 
 @bp.post("/api/projects/<project_id>/requests/<request_id>/reject")
