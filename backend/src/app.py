@@ -7,6 +7,7 @@ from flask_cors import CORS
 import auth
 import profiles
 import projects
+import store
 from seed import seed_medguard
 
 load_dotenv()
@@ -19,6 +20,7 @@ FRONTEND_ORIGIN = "http://localhost:5173"
 def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+    store.init_db(os.environ.get("DATABASE_PATH"))
     CORS(app, origins=[FRONTEND_ORIGIN], supports_credentials=True)
 
     app.register_blueprint(auth.bp)

@@ -59,7 +59,16 @@ EXAMPLE_PROFILES = [
 SEED_PASSWORD = "medguard"
 
 
-def seed_medguard() -> dict:
+def seed_medguard() -> dict | None:
+    """Creates the MedGuard demo project and its four profiles.
+
+    Idempotent: the database now survives restarts, so re-seeding on every boot
+    would pile up duplicate accounts. Returns None when it's already there.
+    """
+    existing = store.find_profile_by_username(EXAMPLE_PROFILES[0]["username"])
+    if existing is not None:
+        return None
+
     password_hash = generate_password_hash(SEED_PASSWORD)
     created_profiles = [
         store.create_profile(profile["username"], password_hash, profile["content"])
@@ -72,5 +81,13 @@ def seed_medguard() -> dict:
 
 
 if __name__ == "__main__":
+    import os
+
+    store.init_db(os.environ.get("DATABASE_PATH"))
     seeded_project = seed_medguard()
-    print(f"Created project {seeded_project['id']!r} with users {seeded_project['users']}")
+    if seeded_project is None:
+        print("MedGuard is already seeded — nothing to do.")
+    else:
+        print(
+            f"Created project {seeded_project['id']!r} with users {seeded_project['users']}"
+        )

@@ -127,15 +127,17 @@ The shell you land in after opening a project from the home view. Member managem
 
 ### 5. Persistence
 
-Storage is currently plain Python dicts in `store.py` — everything is lost on restart, which is painful mid-demo and blocks version history. `store.py`'s functions are already the only way anything touches state, so they're a clean seam: swap the implementation behind them and nothing else changes.
+Storage was plain Python dicts in `store.py` — lost on every restart, painful mid-demo, and a blocker for version history. `store.py`'s functions were already the only way anything touched state, so swapping SQLite in behind them left the blueprints almost untouched.
 
-- [ ] SQLite via stdlib `sqlite3` — file-based, no server to run, survives restart
-- [ ] Tables for profiles, projects, project membership/admins, and IR entries
-- [ ] Keep `store.py`'s function signatures identical so blueprints and tests are untouched
-- [ ] Tests point at a temporary database file per test, replacing the dict-clearing fixture
-- [ ] Seed script becomes idempotent — don't re-seed MedGuard onto an existing database
+**One thing changed for callers:** a returned dict is now a *copy*, so mutating it writes nothing. `profile["content"] = x` silently stopped working and became `store.update_profile_content(...)`, and `join`/`promote` had to re-read the project before returning it or the response was stale. If you find yourself editing a dict that came out of `store`, that's the bug.
 
-*If time is short:* dumping the existing dicts to a JSON file on write and loading on boot buys persistence in a fraction of the time. Worse for concurrent writes and version history, fine for a demo.
+- [X] SQLite via stdlib `sqlite3` — file-based, no server to run, survives restart
+- [X] Tables for profiles, projects, project membership/admins, and IR entries
+- [X] Keep `store.py`'s function signatures identical so blueprints and tests are untouched
+- [X] Tests point at a temporary database file per test, replacing the dict-clearing fixture
+- [X] Seed script becomes idempotent — don't re-seed MedGuard onto an existing database
+
+The database lives at `backend/data.db` (gitignored); override with `DATABASE_PATH`. Delete the file to start clean — the seed reruns on next boot.
 
 ---
 

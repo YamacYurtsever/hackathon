@@ -23,6 +23,5 @@ def update_own_profile():
     if not isinstance(content, dict):
         return jsonify({"error": "content must be an object"}), 400
 
-    profile = current_profile()
-    profile["content"] = content
-    return jsonify(store.public_profile(profile))
+    updated = store.update_profile_content(current_profile()["id"], content)
+    return jsonify(store.public_profile(updated))

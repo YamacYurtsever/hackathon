@@ -5,11 +5,10 @@ from app import create_app
 
 
 @pytest.fixture
-def client():
-    """Fresh app and empty store per test — the store is module-level state."""
-    store.profiles.clear()
-    store.projects.clear()
-    store.entries.clear()
+def client(tmp_path):
+    """Fresh app and its own database file per test, so nothing leaks between
+    tests and none of them touch the real data.db."""
+    store.init_db(str(tmp_path / "test.db"))
 
     app = create_app()
     app.config["TESTING"] = True

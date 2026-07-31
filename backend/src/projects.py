@@ -77,7 +77,8 @@ def join_project(project_id: str):
 
     # Joining only ever grants membership, never admin.
     store.add_member(project_id, current_profile()["id"])
-    return jsonify(project)
+    # Re-read: the project fetched above is a copy, so it doesn't reflect the write.
+    return jsonify(store.get_project(project_id))
 
 
 @bp.post("/api/projects/<project_id>/promote")
@@ -94,7 +95,7 @@ def promote_member(project_id: str):
         return jsonify({"error": "that user is not a member of this project"}), 400
 
     store.promote_admin(project_id, user_id)
-    return jsonify(project)
+    return jsonify(store.get_project(project_id))
 
 
 @bp.post("/api/projects/<project_id>/exit")
