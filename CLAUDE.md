@@ -79,8 +79,6 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 - [ ] `GET /projects` — projects the logged-in user is a member of (scan `users` lists; fine at demo scale)
 - [ ] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
 - [ ] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
-- [ ] `POST /projects/:id/promote` — an admin promotes another member to admin
-- [ ] `POST /projects/:id/exit` — removes the logged-in user from `users`/`admins`; if they were the last admin and other members remain, auto-promote one of them
 
 **Frontend**
 
@@ -90,11 +88,27 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 - [ ] Home view — lists the projects you've joined; landing page after login, entry point into a project
 - [ ] Project creation view
 - [ ] Join-project view
-- [ ] Admin management UI: promote a member, exit the project
 
 ---
 
-### 3. Core Pipeline
+### 3. Project View
+
+The shell you land in after opening a project from the home view. Member management lives here — later milestones fill the same view with the IR feed and re-projected claims.
+
+**Backend**
+
+- [ ] `POST /projects/:id/promote` — an admin promotes another member to admin
+- [ ] `POST /projects/:id/exit` — removes the logged-in user from `users`/`admins`; if they were the last admin and other members remain, auto-promote one of them
+
+**Frontend**
+
+- [ ] Project view shell — project name, member list (username + whether they're an admin)
+- [ ] Promote button next to each member, visible only to admins
+- [ ] Exit-project button
+
+---
+
+### 4. Core Pipeline
 
 **Backend**
 
@@ -110,7 +124,7 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 ---
 
-### 4. Wow-Factor
+### 5. Wow-Factor
 
 **Backend**
 
@@ -127,7 +141,7 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 ---
 
-### 5. Depth
+### 6. Depth
 
 **Backend**
 
@@ -145,7 +159,7 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 ---
 
-### 6. Integration + Polish
+### 7. Integration + Polish
 
 **Backend**
 
@@ -160,7 +174,7 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 ---
 
-### 7. Demo Prep
+### 8. Demo Prep
 - [ ] Full scripted MedGuard run-through, timed
 - [ ] Backup plan (recording/screenshots) if live demo fails
 - [ ] Deck finalized
