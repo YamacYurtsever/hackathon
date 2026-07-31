@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ir_entry.schema.json",
+  "title": "IREntry",
+  "description": "One atomic, neutral fact in a project's Intermediate Representation. This is the source of truth every re-projected view must trace back to. Projects hold a list of IR entry ids — entries don't point back to a project.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "description": "UUID for this IR entry." },
+    "content": {
+      "type": "object",
+      "description": "The neutral, structured fact. Free-form on purpose — shape isn't fixed by an entry 'type', so extraction isn't forced into a rigid template.",
+      "additionalProperties": true
+    },
+    "author": {
+      "type": "string",
+      "description": "User id of whoever last wrote this entry (overwritten on update — no contributor history). Their role is looked up via their ContextProfile at read/write time, not stored here — role is a lens, not a fact."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Server-assigned timestamp, overwritten on update."
+    }
+  }
+}

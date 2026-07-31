@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "profile.schema.json",
+  "title": "Profile",
+  "description": "A user's global context — role, expertise, project history, etc. — used to re-project IR entries into a personalized view. Global per user, not scoped to any one project.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "content": {
+      "type": "object",
+      "description": "Free-form: role, self-described expertise, history blurb, whatever re-projection needs. Shape isn't fixed by separate fields.",
+      "additionalProperties": true
+    }
+  }
+}
