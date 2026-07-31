@@ -434,9 +434,69 @@ Settled:
 
 ---
 
+### 10. Conflict Resolution
+
+The write path assumes new information *supersedes* old: a message that revises a recorded fact becomes an `update`, and the old wording is gone. That's right when someone is correcting the record. It's wrong when two people disagree.
+
+**Superseding and contradicting are different events.** The engineer records sampling at 2 kHz; the biologist records that the study was run against 1 kHz. Neither is a revision of the other — neither author is even claiming to overwrite anything — and resolving it by letting the later one win doesn't settle the disagreement, it *hides* it. A shared record whose whole point is that everyone reads the same facts cannot quietly hold two facts that can't both be true.
+
+So conflict is not a bug in the update path, and making updates smarter wouldn't cover it. It's a state the project can be in, and it needs somewhere to be visible.
+
+**Red, because it's a state that shouldn't persist.** Pending is amber: someone needs to act, and until they do the record is merely incomplete. A conflict is worse than incomplete — the record is currently self-contradictory, and every summary drawn from it is built on both halves. Same header button, same dialog, different colour, because it's a different severity and not a different mechanism.
+
+```
+┌──────────────────────────────────────────────────┐
+│ MedGuard      [2 conflicts][5 pending][4 members]│  ← red, then amber
+└──────────────────────────────────────────────────┘
+                     ↓ clicked
+┌──────────────────────────────────────────────────┐
+│ 2 conflicts                                      │
+│ These can't both be true. The record says both.  │
+│ ┌──────────────────────────────────────────────┐ │
+│ │ engineer · 09:14                             │ │
+│ │ The front-end samples at 2 kHz.              │ │
+│ │                          [edit] [discard]    │ │
+│ │ ─────────────── conflicts with ───────────── │ │
+│ │ biologist · 11:02                            │ │
+│ │ The study was run against 1 kHz sampling.    │ │
+│ │                          [edit] [discard]    │ │
+│ │                        [not a conflict]      │ │
+│ └──────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────┘
+```
+
+**When we look.** On merge, and only on merge — the one moment the IR changes. The newly merged entry is checked against the entries already there, so the cost is one call per merge rather than every pair on every read. A conflict that exists between two entries neither of which is being touched was found when the second one landed.
+
+**Resolution is editing the record, which is the hard part.** Merging is currently the only write to the IR, deliberately. Conflict resolution has to change an entry that is already merged, and inventing a second write path would undo that guarantee. Two options, and this needs deciding before it's built:
+
+- **Resolve through the same gate.** An edit becomes a normal `update` request that an admin merges. Honest, and the conflict stays visible until it lands.
+- **Admin edits in place.** Faster and matches "the admin can edit them", but it's a direct write with no proposal, and it needs to be understood as such rather than arrived at by accident.
+
+**Backend**
+
+- [ ] Conflict record: the two entry ids, when it was found, and why — the model's one-line reason, shown to whoever has to resolve it
+- [ ] Detection on merge: the newly merged entry against the project's existing entries, in code after the model call — a returned pair whose ids don't resolve is discarded, exactly as citations are
+- [ ] `GET /projects/:id/conflicts`
+- [ ] Resolution endpoints: edit an entry, discard an entry, dismiss the conflict. Admin only, enforced server-side like merge
+- [ ] Dismissal is a decision, not a delete: "these don't actually conflict" has to stick, or the next merge re-detects it and the badge never goes away
+- [ ] Re-check after a resolving edit rather than assuming it worked — an edit that doesn't resolve the contradiction shouldn't clear the flag
+- [ ] Discarding an entry is the one place the IR loses a fact. It needs the same admin-only gate as merge, and the summary cache invalidated with it
+- [ ] Tests: a contradiction is detected on merge, a non-admin can't resolve, dismissal survives the next merge
+
+**Frontend**
+
+- [ ] Red header button, left of pending, absent when there are none — the same shape as the pending queue because it's the same kind of thing, a different colour because it's worse
+- [ ] Both entries shown together with author and time, so "who said what, when" is the first thing visible
+- [ ] Edit, discard, and dismiss per conflict; the editor is the one the other gates use
+- [ ] The conflict stands until it's resolved or dismissed — closing the dialog doesn't clear it
+- [ ] Non-admins see conflicts too. Everyone should know the record currently contradicts itself; only an admin can act on it
+
+**Open question worth settling early:** what NL does while a conflict is live. Today re-projection would read both entries and blend them into confident prose, which is the worst possible presentation of a contradiction. Flagging it in the summary is probably right, and it isn't free.
+
+---
+
 ### Future
 
-- [ ] Conflict detection between contradictory statements
 - [ ] Project change timeline view
 - [ ] Third party integration
 - [ ] Evidence tracking for external sources
