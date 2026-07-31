@@ -380,3 +380,4 @@ The changeset/confirm/approve flow is no longer here — it became the core writ
 - [ ] Conflict detection between contradictory statements
 - [ ] Conflict resolution UX
 - [ ] Evidence tracking for external sources
+- [ ] Project change timeline view

@@ -1,8 +1,7 @@
-"""NL → changeset orchestration: call, validate, one repair retry, assemble.
+"""NL → changeset: call, validate, one repair retry.
 
-Unlike the frontend lab this ports from, nothing here mints ids or timestamps.
-Extraction proposes; an entry only gets an identity once an admin approves the
-request built from this changeset.
+Nothing here mints ids or timestamps. Extraction proposes; an entry gets an
+identity only once an admin approves the request built from this changeset.
 """
 
 import mistral_client

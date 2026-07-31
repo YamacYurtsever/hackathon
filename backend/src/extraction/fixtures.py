@@ -1,12 +1,11 @@
-"""Test corpus for extraction, ported from the frontend lab.
+"""Adversarial test corpus — each fixture targets one failure mode.
 
-These are adversarial on purpose — each one targets a specific failure mode.
-They need a live model, so they drive `eval_extraction.py` rather than the unit
+Needs a live model, so these drive `eval_extraction.py` rather than the unit
 tests, which stay offline.
 """
 
-# Soft expectations: eyeball aids for the evaluator, not hard assertions. A
-# model is allowed to reasonably disagree about how many facts a sentence holds.
+# Soft expectations: eyeball aids, not hard assertions. A model is allowed to
+# reasonably disagree about how many facts a sentence holds.
 FIXTURES = [
     {
         "id": "canonical",

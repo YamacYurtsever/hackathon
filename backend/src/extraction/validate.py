@@ -1,9 +1,4 @@
-"""Grounding checks. Pure functions, no network.
-
-Ported from `frontend/src/lib/extraction/validate.ts`, plus operation-level
-validation for the changeset model and a check for fabricated date precision —
-a gap the lab's README flagged after seeing "14 March" become "2024-03-14".
-"""
+"""Grounding checks. Pure functions, no network."""
 
 import re
 

@@ -1,30 +1,23 @@
-"""Extraction prompt. Ported from the frontend lab in
-`frontend/src/lib/extraction/prompt.ts`, extended to emit a changeset
-(creates *and* updates) rather than only new entries.
-"""
+"""Extraction prompt: a team message in, a changeset of IR operations out."""
 
 import json
 
-# The IR schema leaves `content` free-form on purpose. This is a *soft*
-# convention, not a template: four keys we ask for every time so re-projection
-# has something to rely on, plus explicit permission to add whatever else the
-# fact needs. Loosen or tighten it here — it is the single place the shape of
-# extracted content is decided.
+# `content` is free-form in the schema. This is a soft convention, not a
+# template — the single place the shape of extracted content is decided.
 CONTENT_CONVENTION = """Every content object SHOULD carry these four keys:
   "statement"    - one neutral sentence stating the fact. No discipline jargon,
                    no hedging, no audience-specific framing.
   "subject"      - short canonical name of the thing the fact is about
                    (e.g. "ECG sensor sampling rate"). Reuse an existing subject
-                   string verbatim when the fact concerns something already known.
-  "source_quote" - a VERBATIM span copied from the input text. Must appear in the
-                   input character-for-character. This is what the UI shows when a
-                   user clicks a citation, so it must be real.
-  "certainty"    - one of: "stated" (asserted as fact by the author),
+                   string verbatim when the fact is about something already known.
+  "source_quote" - a span copied from the input character-for-character. The UI
+                   shows it when a user checks a citation, so it must be real.
+  "certainty"    - one of: "stated" (asserted by the author),
                    "predicted" (expected but not yet observed),
                    "estimated" (approximate figure), or
-                   "reported" (relayed from someone/something else).
+                   "reported" (relayed from someone else).
 
-Beyond those four, add any keys the fact genuinely needs. Suggestions, not rules:
+Add any other keys the fact genuinely needs. Suggestions, not rules:
   - quantities as objects with units: {"value": 2000, "unit": "Hz"}
   - changes as "previous" and "current"
   - dates as ISO strings
@@ -36,8 +29,8 @@ add, and existing facts to revise.
 
 RULES
 
-1. ATOMIC. One operation per fact. A message stating three things produces three
-   operations. Never bundle unrelated facts into one.
+1. ATOMIC. One operation per fact. A message stating three things produces
+   three operations.
 
 2. NEUTRAL, NOT SIMPLIFIED. Strip framing that belongs to the author's
    discipline, but keep every bit of technical precision. "2 kHz" stays "2 kHz";
@@ -53,18 +46,17 @@ RULES
 
 5. ADD NO PRECISION THE INPUT LACKS. Never sharpen a value beyond what was
    written. "14 March" has no year, so do not emit "2024-03-14". "a couple of
-   weeks" is not "14 days". If it is not in the message, it is unresolved.
+   weeks" is not "14 days".
 
-6. SAY WHAT WAS SAID, NOT WHAT IT MEANS. Do not extract consequences,
-   downstream impacts, or implications for other disciplines. A prediction the
-   author made is a fact about their prediction (certainty "predicted"); a
-   consequence you worked out yourself is not extractable. Something else
-   computes those later.
+6. SAY WHAT WAS SAID, NOT WHAT IT MEANS. Do not extract consequences or
+   implications for other disciplines. A prediction the author made is a fact
+   about their prediction (certainty "predicted"); a consequence you worked out
+   yourself is not. Something else computes those later.
 
-7. UPDATE, DON'T DUPLICATE. If a fact revises something in KNOWN ENTRIES —
-   a value changed, a figure was corrected, a plan was superseded — emit an
-   "update" naming that entry's id, with the full replacement content. Only emit
-   "create" when the fact is genuinely new. A contradicting duplicate is a bug.
+7. UPDATE, DON'T DUPLICATE. If a fact revises something in KNOWN ENTRIES, emit
+   an "update" naming that entry's id, with the full replacement content. Only
+   emit "create" when the fact is genuinely new. A contradicting duplicate is a
+   bug.
 
 8. NO ENVELOPE FIELDS. Never emit "id", "author" or "created_at" inside content
    — those are assigned outside the model.
@@ -135,10 +127,10 @@ Output:
   ]
 }
 
-Note the first operation revises e-17 instead of adding a second, contradicting
-sampling-rate fact. Note the third: the author's prediction is recorded as a
-prediction. Note also what is absent — nothing about validation studies, filings
-or schedules. Those are consequences, and consequences are not extracted."""
+Note the first operation revises e-17 rather than adding a second, contradicting
+sampling-rate fact, and the third records the author's prediction as a
+prediction. Note what is absent: nothing about validation studies, filings or
+schedules. Those are consequences, and consequences are not extracted."""
 
 EXTRACTION_SYSTEM_PROMPT = f"{RULES}\n\n{CONTENT_CONVENTION}\n\n{EXAMPLE}"
 
