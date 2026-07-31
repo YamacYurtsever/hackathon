@@ -5,6 +5,7 @@ from flask import Flask
 from flask_cors import CORS
 
 import auth
+import pipeline
 import profiles
 import projects
 import store
@@ -26,6 +27,7 @@ def create_app() -> Flask:
     app.register_blueprint(auth.bp)
     app.register_blueprint(profiles.bp)
     app.register_blueprint(projects.bp)
+    app.register_blueprint(pipeline.bp)
 
     @app.get("/api/health")
     def health():

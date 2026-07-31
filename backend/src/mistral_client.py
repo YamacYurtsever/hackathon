@@ -25,6 +25,7 @@ class JSONResult:
 
     data: dict
     raw: str
+    model: str
     prompt_tokens: int | None
     completion_tokens: int | None
     latency_ms: int
@@ -48,6 +49,7 @@ def complete_json(system: str, user: str, model: str = DEFAULT_MODEL) -> JSONRes
     return JSONResult(
         data=json.loads(raw),
         raw=raw,
+        model=model,
         prompt_tokens=getattr(usage, "prompt_tokens", None),
         completion_tokens=getattr(usage, "completion_tokens", None),
         latency_ms=latency_ms,

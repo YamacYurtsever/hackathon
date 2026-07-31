@@ -1,4 +1,14 @@
-import type { Member, Profile, Project } from '@/types/ir'
+import type {
+  ChangeRequest,
+  IREntry,
+  InputKind,
+  InputResult,
+  Member,
+  Operation,
+  Profile,
+  Project,
+  Summary,
+} from '@/types/ir'
 
 // Same host as the frontend (localhost) so the session cookie is same-site.
 const BASE_URL = 'http://localhost:5001/api'
@@ -81,4 +91,44 @@ export const api = {
 
   exitProject: (id: string) =>
     request<void>(`/projects/${id}/exit`, { method: 'POST' }),
+
+  // One box, two outcomes: a statement comes back as a changeset to confirm, a
+  // question as an answer. `kind` forces one path when the user overrides.
+  sendInput: (id: string, text: string, kind?: InputKind) =>
+    request<InputResult>(`/projects/${id}/input`, {
+      method: 'POST',
+      body: JSON.stringify({ text, kind }),
+    }),
+
+  getView: (id: string) => request<Summary>(`/projects/${id}/view`),
+
+  // encodeURIComponent matters: an unencoded "+00:00" offset arrives as a
+  // space and the server sees a different timestamp.
+  getChanges: (id: string, since?: string) =>
+    request<IREntry[]>(
+      `/projects/${id}/changes${since ? `?since=${encodeURIComponent(since)}` : ''}`,
+    ),
+
+  listRequests: (id: string) => request<ChangeRequest[]>(`/projects/${id}/requests`),
+
+  // The author confirming our reading — the first point anything is stored.
+  confirmChangeset: (id: string, text: string, operations: Operation[]) =>
+    request<ChangeRequest>(`/projects/${id}/requests`, {
+      method: 'POST',
+      body: JSON.stringify({ text, operations }),
+    }),
+
+  editRequest: (id: string, requestId: string, operations: Operation[]) =>
+    request<ChangeRequest>(`/projects/${id}/requests/${requestId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ operations }),
+    }),
+
+  approveRequest: (id: string, requestId: string) =>
+    request<{ applied: string[] }>(`/projects/${id}/requests/${requestId}/approve`, {
+      method: 'POST',
+    }),
+
+  rejectRequest: (id: string, requestId: string) =>
+    request<void>(`/projects/${id}/requests/${requestId}/reject`, { method: 'POST' }),
 }

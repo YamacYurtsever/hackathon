@@ -147,45 +147,47 @@ Pure backend — no UI yet. Exercised via the API client and curl. Prove the pip
 
 **Backend**
 
-- [ ] Intent classification: is this input a statement of fact or a question? Cheap first pass, since the two paths diverge completely
-- [ ] `POST /projects/:id/input` — one endpoint behind the single input box. Returns either `{kind: "changeset", …}` (statement → proposed changes, **nothing stored**) or `{kind: "answer", …}` (question → grounded answer, nothing stored)
-- [ ] Accept an optional `kind` override on that endpoint, so the UI's "treat it as the other thing" doesn't need a second route
-- [ ] Extraction prompt: NL statement + existing project IR → a changeset of operations, `create` and/or `update` — one message can add a fact and revise an old one at once
-- [ ] `update` operations name the entry they revise and carry the new `content`, so the UI can diff old against new
-- [ ] Answer prompt: question + viewer's profile + project IR → grounded prose answer with sources
-- [ ] Re-projection prompt: IR entries + viewer's profile `content` → cohesive summary as `{text, source_entry_ids}` segments
-- [ ] Re-projection **filters**: entries irrelevant to the viewer are omitted entirely, not restated blandly. Choosing what to leave out is part of the job
-- [ ] Re-projection surfaces implications, including ones spanning several entries — not just a restatement of each fact
-- [ ] `GET /projects/:id/view` — re-projects the project for the logged-in user's profile, returns the segment array
-- [ ] `GET /projects/:id/changes?since=` — entries with `created_at` after the given timestamp
+- [X] Intent classification: is this input a statement of fact or a question? Cheap first pass, since the two paths diverge completely
+- [X] `POST /projects/:id/input` — one endpoint behind the single input box. Returns either `{kind: "changeset", …}` (statement → proposed changes, **nothing stored**) or `{kind: "answer", …}` (question → grounded answer, nothing stored)
+- [X] Accept an optional `kind` override on that endpoint, so the UI's "treat it as the other thing" doesn't need a second route
+- [X] Extraction prompt: NL statement + existing project IR → a changeset of operations, `create` and/or `update` — one message can add a fact and revise an old one at once
+- [X] `update` operations name the entry they revise and carry the new `content`, so the UI can diff old against new
+- [X] Answer prompt: question + viewer's profile + project IR → grounded prose answer with sources
+- [X] Re-projection prompt: IR entries + viewer's profile `content` → cohesive summary as `{text, source_entry_ids}` segments
+- [X] Re-projection **filters**: entries irrelevant to the viewer are omitted entirely, not restated blandly. Choosing what to leave out is part of the job
+- [X] Re-projection surfaces implications, including ones spanning several entries — not just a restatement of each fact
+- [X] `GET /projects/:id/view` — re-projects the project for the logged-in user's profile, returns the segment array
+- [X] `GET /projects/:id/changes?since=` — entries with `created_at` after the given timestamp
 
 **Write path (the only way the IR changes)**
 
-- [ ] `POST /projects/:id/requests` — author confirms a changeset; stored as a pending request. This is the first point anything is persisted
-- [ ] `GET /projects/:id/requests` — pending requests for the project
-- [ ] `PUT /projects/:id/requests/:rid` — hand-edit a pending request's operations. Allowed for its author and for admins
-- [ ] An applied entry's `author` is the original proposer, never the admin who edited it — editing isn't authorship
-- [ ] Confirming always creates a request, even when the author is an admin — one path, and the approval step stays demoable
-- [ ] `POST /projects/:id/requests/:rid/approve` / `…/reject` — admin only, enforced server-side, no exceptions. Approving applies every operation in the changeset atomically
-- [ ] Rejecting deletes the request; a rejected proposal isn't a fact and doesn't belong in history
-- [ ] Reject an `update` whose target entry no longer exists rather than silently recreating it
+- [X] `POST /projects/:id/requests` — author confirms a changeset; stored as a pending request. This is the first point anything is persisted
+- [X] `GET /projects/:id/requests` — pending requests for the project
+- [X] `PUT /projects/:id/requests/:rid` — hand-edit a pending request's operations. Allowed for its author and for admins
+- [X] An applied entry's `author` is the original proposer, never the admin who edited it — editing isn't authorship
+- [X] Confirming always creates a request, even when the author is an admin — one path, and the approval step stays demoable
+- [X] `POST /projects/:id/requests/:rid/approve` / `…/reject` — admin only, enforced server-side, no exceptions. Approving applies every operation in the changeset atomically
+- [X] Rejecting deletes the request; a rejected proposal isn't a fact and doesn't belong in history
+- [X] Reject an `update` whose target entry no longer exists rather than silently recreating it
 
 **Grounding (verify in code, don't trust the prompt)**
 
-- [ ] Every claim carries its sources: which IR entries, and where in their `content`
-- [ ] A claim may cite **several** entries — a synthesis like "timeline slips ~2 weeks" can legitimately draw on three facts, and forcing a single source would misrepresent it
-- [ ] Resolve every cited path against the actual entry server-side; drop claims whose citations don't resolve. The model will happily invent a plausible-looking path, so this has to be a code check, not a prompt instruction
+- [X] Every claim carries its sources: which IR entries, and where in their `content`
+- [X] A claim may cite **several** entries — a synthesis like "timeline slips ~2 weeks" can legitimately draw on three facts, and forcing a single source would misrepresent it
+- [X] Resolve every cited path against the actual entry server-side; drop claims whose citations don't resolve. The model will happily invent a plausible-looking path, so this has to be a code check, not a prompt instruction
+
+**Known gap this leaves.** Citation checking proves a segment *points* at real entries; it can't prove the text only says what those entries support. Live output already shows the difference — a summary cited two real entries and still slipped in "from the typical 1 kHz baseline for this device class", which no entry states. Closing that is the meaning-preservation pass in milestone 9, and until then the honest claim is "every claim is traceable", not "every claim is verified".
 
 **Summary caching**
 
-- [ ] Cache the re-projected summary per (project, user) server-side — recomputing on every project open is slow and pointless when nothing changed
-- [ ] Cache key is a hash of (entry ids + their `created_at`) and the viewer's profile `content`, so both a new entry *and* an edited self-description bust it — no manual version counters
-- [ ] Server-side, not localStorage: only the server knows when either input changed, and a local cache would regenerate on every refresh or new browser
-- [ ] Q&A answers are deliberately **not** cached — every question differs, and a live call reads as "thinking", not "slow"
+- [X] Cache the re-projected summary per (project, user) server-side — recomputing on every project open is slow and pointless when nothing changed
+- [X] Cache key is a hash of (entry ids + their `created_at`) and the viewer's profile `content`, so both a new entry *and* an edited self-description bust it — no manual version counters
+- [X] Server-side, not localStorage: only the server knows when either input changed, and a local cache would regenerate on every refresh or new browser
+- [X] Q&A answers are deliberately **not** cached — every question differs, and a live call reads as "thinking", not "slow"
 
 **Frontend**
 
-- [ ] API client wrapper for the endpoints above
+- [X] API client wrapper for the endpoints above
 
 ---
 

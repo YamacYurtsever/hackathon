@@ -45,4 +45,52 @@ export interface Member extends Profile {
   is_admin: boolean
 }
 
-// Re-projections are runtime output, not stored data — no schema for them.
+// A proposed change to the IR. Extraction produces these; they only become
+// entries once an admin approves the request carrying them.
+export interface Operation {
+  op: 'create' | 'update'
+  // Present on updates: the entry being revised.
+  target_id?: string
+  content: Record<string, unknown>
+}
+
+// Something the message gestured at but didn't pin down. Surfaced, not invented.
+export interface Unresolved {
+  quote: string
+  issue: string
+}
+
+// A confirmed changeset waiting on an admin.
+export interface ChangeRequest {
+  id: string
+  project_id: string
+  author: string
+  created_at: string
+  source_text: string
+  operations: Operation[]
+}
+
+// Prose is returned as segments so it reads continuously while every clause
+// stays traceable. The server drops any segment whose citations don't resolve.
+export interface Segment {
+  text: string
+  source_entry_ids: string[]
+}
+
+export interface Summary {
+  segments: Segment[]
+  cached: boolean
+}
+
+export type InputKind = 'changeset' | 'answer'
+
+// One input box, two outcomes — neither stores anything on its own.
+export type InputResult =
+  | {
+      kind: 'changeset'
+      text: string
+      operations: Operation[]
+      unresolved: Unresolved[]
+      rejected: unknown[]
+    }
+  | { kind: 'answer'; text: string; segments: Segment[] }
