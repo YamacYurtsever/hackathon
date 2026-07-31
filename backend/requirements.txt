@@ -1,5 +1,8 @@
-flask
-flask-cors
-python-dotenv
-mistralai
-vulture
+flask>=3.1,<4
+flask-cors>=6,<7
+jsonschema>=4.25,<5
+mistralai>=2.3.1,<3
+pydantic>=2.11,<3
+python-dotenv>=1.1,<2
+pytest>=8.4,<9
+vulture>=2.14,<3
