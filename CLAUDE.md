@@ -135,5 +135,5 @@ Runs on http://localhost:5173.
 
 ## Guardrails (keep repeating to the team)
 - Every AI-generated claim shown to a user must be traceable to an IR field. If it can't cite its source, don't show it as fact.
-- Build the demo scenario first, schema second, generic support last. Don't generalize before the one scenario works end-to-end.
+- Design and implement the IR schema first; script the MedGuard scenario against it afterward. (Overrides the earlier "scenario first" plan — team decided to prioritize getting the IR + pipeline built, and will validate against the specific scenario once implementation is further along.)
 - Query path (read) is low-risk and should be rock-solid. Amendment path (write) is higher-risk — fine if it's scripted/narrow for the demo.
