@@ -6,7 +6,7 @@ from flask_cors import CORS
 
 from ai.documents.extract import MAX_BYTES
 from data import store
-from data.seed import seed_medguard
+from data.seed import seed_demo
 from routes import auth, pipeline, profiles, projects
 
 load_dotenv()
@@ -48,7 +48,7 @@ app = create_app()
 
 if __name__ == "__main__":
     # Seeding lives here, not at import time, so tests get a clean store.
-    seed_medguard()
+    seed_demo()
     # use_reloader=False: the reloader re-execs this module in a subprocess,
     # which would seed the in-memory store twice.
     # 5001, not 5000: macOS AirPlay Receiver squats on port 5000.

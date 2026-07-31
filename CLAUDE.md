@@ -59,9 +59,11 @@ Run the backend tests with `cd backend && pytest`. Keep endpoint behaviour cover
 - [X] Backend repo scaffolded (Flask, Vulture)
 - [X] Storage layer for entries/projects/profiles (in-memory, `backend/store.py`)
 - [X] Mistral client wrapper + API key wired via `.env` (`backend/mistral_client.py`)
-- [X] Seed script: create the MedGuard project and its four example profiles (`backend/seed.py`, wired into app startup)
+- [X] Seed script: create the demo accounts and their projects (`backend/src/data/seed.py`, wired into app startup)
 - [X] Seed MedGuard the way a real project starts — a founding paragraph from the creator, and the nine facts read out of it. The paragraph stays in `seed.py` so it's obvious where the entries came from; the entries are written out literally rather than extracted at boot, since seeding has to be deterministic, offline, and not need an API key before the app will start
 - [X] The seeded sampling rate is **1 kHz**, not 2 kHz. The demo's opening move — "bumped sampling to 2kHz" — then lands as an *update* with a visible before/after, instead of yet another create. The update path was previously not demoable at all
+- [X] Four projects, not one. One project demos the pipeline; four demo the product, and they differ in the things the UI keys off — who administers them, who can see them at all, and whether anything is currently waiting or contradicting. Each seeded account lands on a different home page, so switching profiles changes more than the prose
+- [X] The seed includes a pending queue on one project and a live conflict on another, so a cold boot shows the amber and red badges without anyone having to stage them mid-demo. The conflict is between two different people's facts, which is the case the feature exists for
 
 **Frontend**
 

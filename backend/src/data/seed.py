@@ -143,43 +143,150 @@ FOUNDING_ENTRIES = [
 ]
 
 
-def seed_medguard() -> dict | None:
-    """Creates the MedGuard demo project and its four profiles.
+# --- the other projects ---
+#
+# One project demos the pipeline; four demo the product. They differ in the
+# things the UI actually keys off: who administers them, who can see them at
+# all, and whether they currently have anything waiting or contradicting. Each
+# seeded account lands on a different home page as a result.
+#
+# Facts are written out rather than extracted, for the same reason MedGuard's
+# are: seeding has to be deterministic, offline, and free.
 
-    Idempotent: the database now survives restarts, so re-seeding on every boot
+HALO_ENTRIES = [
+    ("engineer", {"statement": "Halo is a large-volume infusion pump for inpatient use."}),
+    ("engineer", {"statement": "The pump delivers between 0.1 and 999 mL/h."}),
+    ("engineer", {"statement": "Occlusion detection triggers at 300 mmHg of downstream pressure."}),
+    ("biologist", {"statement": "Flow accuracy is specified as ±5% across the full delivery range."}),
+    ("business", {"statement": "IEC 60601-2-24 testing is booked with an external lab for 3 June."}),
+    ("business", {"statement": "Two launch sites are committed for Q4."}),
+    ("engineer", {"statement": "The pump firmware shares the detection stack used in MedGuard."}),
+]
+
+NORTHSTAR_ENTRIES = [
+    ("business", {"statement": "NORTHSTAR is a multi-site observational study supporting the MedGuard filing."}),
+    ("biologist", {"statement": "The enrolment target is 240 patients."}),
+    ("biologist", {"statement": "Five sites are activated, with Massachusetts General as the coordinating centre."}),
+    ("lawyer", {"statement": "IRB approval is in place at four of the five sites."}),
+    ("business", {"statement": "The monitoring plan is risk-based, with quarterly site visits."}),
+    ("business", {"statement": "Enrolment is committed to complete 300 patients before database lock."}),
+]
+
+AEGIS_ENTRIES = [
+    ("lawyer", {"statement": "Aegis tracks post-market regulatory change affecting the device portfolio."}),
+    ("lawyer", {"statement": "The EU MDR transition deadline for legacy devices is 31 December 2028."}),
+    ("lawyer", {"statement": "FDA guidance on predetermined change control plans applies to AI-enabled devices."}),
+    ("engineer", {"statement": "A change control plan must name the specific model versions it covers."}),
+]
+
+DEMO_PROJECTS = [
+    {
+        "name": "MedGuard",
+        "admin": "engineer",
+        "members": ["engineer", "biologist", "lawyer", "business"],
+        # Every fact here came out of FOUNDING_MESSAGE above.
+        "entries": [("engineer", content) for content in FOUNDING_ENTRIES],
+    },
+    {
+        "name": "Halo Infusion Pump",
+        # Administered by someone who didn't build it, which is the normal case
+        # and the one where the merge gate earns its keep.
+        "admin": "business",
+        "members": ["engineer", "biologist", "business"],
+        "entries": HALO_ENTRIES,
+        # Waiting on the admin, so the queue isn't empty on a cold start.
+        "pending": [
+            (
+                "engineer",
+                "Dropping the occlusion threshold to 250 and pushing battery target to 8h",
+                {"statement": "Occlusion detection triggers at 250 mmHg of downstream pressure."},
+            ),
+            (
+                "engineer",
+                "Dropping the occlusion threshold to 250 and pushing battery target to 8h",
+                {"statement": "The battery runtime target is 8 hours."},
+            ),
+        ],
+    },
+    {
+        "name": "NORTHSTAR Trial Ops",
+        "admin": "biologist",
+        "members": ["biologist", "lawyer", "business"],
+        "entries": NORTHSTAR_ENTRIES,
+        # Two people committed to different numbers, and neither was revising
+        # the other — exactly the case the update path can't handle.
+        "conflicts": [
+            (
+                1,
+                5,
+                "Enrolment cannot both target 240 patients and be committed to "
+                "complete 300 before database lock.",
+            )
+        ],
+    },
+    {
+        "name": "Aegis Regulatory Watch",
+        "admin": "lawyer",
+        "members": ["lawyer", "engineer"],
+        "entries": AEGIS_ENTRIES,
+    },
+]
+
+
+def seed_demo() -> dict | None:
+    """Creates the demo accounts and their projects.
+
+    Idempotent: the database survives restarts, so re-seeding on every boot
     would pile up duplicate accounts. Returns None when it's already there.
     """
-    existing = store.find_profile_by_username(EXAMPLE_PROFILES[0]["username"])
-    if existing is not None:
+    if store.find_profile_by_username(EXAMPLE_PROFILES[0]["username"]) is not None:
         return None
 
     password_hash = generate_password_hash(SEED_PASSWORD)
-    created_profiles = [
-        store.create_profile(profile["username"], password_hash, profile["content"])
+    people = {
+        profile["username"]: store.create_profile(
+            profile["username"], password_hash, profile["content"]
+        )["id"]
         for profile in EXAMPLE_PROFILES
-    ]
-    project = store.create_project("MedGuard", creator_id=created_profiles[0]["id"])
-    for profile in created_profiles[1:]:
-        store.add_member(project["id"], profile["id"])
+    }
 
-    # Authored by the creator, since they're the one who wrote the founding
-    # paragraph these were read out of.
-    creator_id = created_profiles[0]["id"]
-    for content in FOUNDING_ENTRIES:
-        entry = store.create_entry(content, author=creator_id)
-        store.add_entry_to_project(project["id"], entry["id"])
+    first = None
+    for spec in DEMO_PROJECTS:
+        project = store.create_project(spec["name"], creator_id=people[spec["admin"]])
+        for username in spec["members"]:
+            if username != spec["admin"]:
+                store.add_member(project["id"], people[username])
 
-    return store.get_project(project["id"])
+        # Authorship is the point of the feed, so facts keep the person who
+        # would have said them rather than all landing on the admin.
+        entry_ids = []
+        for username, content in spec["entries"]:
+            entry = store.create_entry(content, author=people[username])
+            store.add_entry_to_project(project["id"], entry["id"])
+            entry_ids.append(entry["id"])
+
+        for username, source_text, content in spec.get("pending", []):
+            store.create_request(
+                project["id"],
+                people[username],
+                source_text,
+                {"op": "create", "content": content},
+            )
+
+        for a, b, reason in spec.get("conflicts", []):
+            store.record_conflict(project["id"], entry_ids[a], entry_ids[b], reason)
+
+        first = first or project
+
+    return store.get_project(first["id"]) if first else None
 
 
 if __name__ == "__main__":
     import os
 
     store.init_db(os.environ.get("DATABASE_PATH"))
-    seeded_project = seed_medguard()
+    seeded_project = seed_demo()
     if seeded_project is None:
-        print("MedGuard is already seeded — nothing to do.")
+        print("Already seeded — nothing to do.")
     else:
-        print(
-            f"Created project {seeded_project['id']!r} with users {seeded_project['users']}"
-        )
+        print(f"Seeded {len(DEMO_PROJECTS)} projects and {len(EXAMPLE_PROFILES)} accounts.")

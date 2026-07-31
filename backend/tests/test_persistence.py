@@ -1,7 +1,7 @@
 """Tests for what persistence actually buys: state that outlives the process."""
 
 from data import store
-from data.seed import EXAMPLE_PROFILES, seed_medguard
+from data.seed import DEMO_PROJECTS, EXAMPLE_PROFILES, seed_demo
 
 
 def test_data_survives_a_reconnect(tmp_path):
@@ -82,16 +82,18 @@ def test_profile_content_update_persists(tmp_path):
 
 def test_seeding_twice_does_not_duplicate(tmp_path):
     # The database outlives the process now, so booting twice must not pile up
-    # a second set of MedGuard accounts.
+    # a second set of demo accounts and projects.
     store.init_db(str(tmp_path / "seed.db"))
 
-    first = seed_medguard()
+    first = seed_demo()
     assert first is not None
 
-    assert seed_medguard() is None
+    assert seed_demo() is None
 
-    profile = store.find_profile_by_username(EXAMPLE_PROFILES[0]["username"])
-    assert len(store.projects_for_user(profile["id"])) == 1
+    username = EXAMPLE_PROFILES[0]["username"]
+    profile = store.find_profile_by_username(username)
+    expected = [spec for spec in DEMO_PROJECTS if username in spec["members"]]
+    assert len(store.projects_for_user(profile["id"])) == len(expected)
 
 
 def test_default_db_path_is_the_backend_root():

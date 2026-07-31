@@ -16,6 +16,8 @@ Runs on http://localhost:5001 (not 5000 — macOS AirPlay Receiver squats on tha
 
 Seeded demo accounts: `engineer`, `biologist`, `lawyer`, `business` — all with password `medguard`.
 
+They share four projects but not all of them, and each administers a different one, so every account sees a different home page. Halo Infusion Pump boots with changes waiting for its admin; NORTHSTAR Trial Ops boots with a live conflict.
+
 ### Frontend (React + Vite)
 
 ```bash
