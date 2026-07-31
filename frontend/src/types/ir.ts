@@ -29,10 +29,13 @@ export interface Project {
   admins: string[]
 }
 
-// Global per user, not scoped to a project. Free-form on purpose — role,
-// expertise, history blurb, whatever re-projection needs.
+// A user's account and global context, not scoped to a project. Content is
+// free-form on purpose — role, expertise, history blurb, whatever
+// re-projection needs. The backend also stores a password_hash, but that
+// never gets sent to the client, so it's not part of this type.
 export interface Profile {
   id: string
+  username: string
   content: Record<string, unknown>
 }
 

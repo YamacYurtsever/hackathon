@@ -57,6 +57,7 @@ Python 3.10+ is required.
 cd backend
 python3 -m venv venv
 source venv/bin/activate
+<<<<<<< HEAD
 pip install -r requirements.txt
 cp .env.example .env
 ```
@@ -75,6 +76,14 @@ python app.py
 ```
 
 The API runs at `http://127.0.0.1:5000`.
+=======
+python src/app.py
+```
+
+Runs on http://localhost:5001 (not 5000 — macOS AirPlay Receiver squats on that port). Check it's up with `curl http://localhost:5001/api/health`.
+
+Seeded demo accounts: `engineer`, `biologist`, `lawyer`, `business` — all with password `medguard`.
+>>>>>>> 7b8854a243c689233a2afa957731332bbf6cde4a
 
 ### Frontend
 
