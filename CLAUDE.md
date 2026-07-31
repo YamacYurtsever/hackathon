@@ -281,27 +281,27 @@ The writing half — getting facts *into* the project and seeing them land. Buil
 
 **Frontend**
 
-- [ ] Single input box, always visible below the panel — posts to `/input`, shows a working state while Mistral runs
-- [ ] Result is never ambiguous: say whether the input was read as a fact or answered as a question, with a one-click "treat it as the other thing"
-- [ ] Feed: chat-style timeline, one row per IR entry — time, author username, the structured fact rendered readably
-- [ ] An entry expands to its raw `content` JSON for anyone who wants the unvarnished version
-- [ ] Feed refreshes after a change is applied, newest last (it reads as a conversation)
-- [ ] Empty state before the first message
+- [X] Single input box, always visible below the panel — posts to `/input`, shows a working state while Mistral runs
+- [X] Result is never ambiguous: say whether the input was read as a fact or answered as a question, with a one-click "treat it as the other thing"
+- [X] Feed: chat-style timeline, one row per IR entry — time, author username, the structured fact rendered readably
+- [X] An entry expands to its raw `content` JSON for anyone who wants the unvarnished version
+- [X] Feed refreshes after a change is applied, newest last (it reads as a conversation)
+- [X] Empty state before the first message
 
 **Frontend — confirmation (gate 1)**
 
-- [ ] Changeset preview after a statement: creates and updates listed together, updates shown as a diff of old vs new `content`
-- [ ] NL/IR toggle on the preview — read the change as plain language or as the raw diff
-- [ ] Confirm / edit / discard; discarding leaves nothing behind, since nothing was stored
-- [ ] Editing is hand-editing the raw `content` in IR mode — the escape hatch when extraction gets it wrong
-- [ ] Make it obvious this is *our reading* of what you said, not yet a fact
+- [X] Changeset preview after a statement: creates and updates listed together, updates shown as a diff of old vs new `content`
+- [X] NL/IR toggle on the preview — read the change as plain language or as the raw diff
+- [X] Confirm / edit / discard; discarding leaves nothing behind, since nothing was stored
+- [X] Editing is hand-editing the raw `content` in IR mode — the escape hatch when extraction gets it wrong
+- [X] Make it obvious this is *our reading* of what you said, not yet a fact
 
 **Frontend — approval (gate 2)**
 
-- [ ] Pending-requests list on the project, visible to everyone (transparency), actionable only by admins
-- [ ] Approve / reject per request, with the same diff view the author confirmed
-- [ ] Admins can hand-edit a request before approving, in the same IR-mode editor the author used
-- [ ] Non-admins see their own requests are waiting, so nobody wonders why their fact never landed
+- [X] Pending-requests list on the project, visible to everyone (transparency), actionable only by admins
+- [X] Approve / reject per request, with the same diff view the author confirmed
+- [X] Admins can hand-edit a request before approving, in the same IR-mode editor the author used
+- [X] Non-admins see their own requests are waiting, so nobody wonders why their fact never landed
 
 ---
 

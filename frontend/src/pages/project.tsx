@@ -2,14 +2,24 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { AppLayout } from '@/components/app-layout'
+import { AnswerCard } from '@/components/project/answer-card'
+import { ChangesetPreview } from '@/components/project/changeset-preview'
+import { Composer } from '@/components/project/composer'
+import { Feed } from '@/components/project/feed'
+import { PendingRequests } from '@/components/project/pending-requests'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
-import type { Member, Project } from '@/types/ir'
+import type {
+  ChangeRequest,
+  IREntry,
+  InputResult,
+  Member,
+  Operation,
+  Project,
+} from '@/types/ir'
 
-// Later milestones fill this same view with the IR feed and re-projected
-// claims — for now it's the project's identity and member management.
 export function ProjectPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -17,26 +27,36 @@ export function ProjectPage() {
 
   const [project, setProject] = useState<Project | null>(null)
   const [members, setMembers] = useState<Member[]>([])
+  const [entries, setEntries] = useState<IREntry[]>([])
+  const [requests, setRequests] = useState<ChangeRequest[]>([])
+  const [pending, setPending] = useState<InputResult | null>(null)
+
   const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [busyId, setBusyId] = useState('')
   const [copied, setCopied] = useState(false)
-  // Bumped to re-fetch after a change (e.g. promoting someone).
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     if (!projectId) return
     let cancelled = false
 
-    Promise.all([api.getProject(projectId), api.listMembers(projectId)])
-      .then(([loadedProject, loadedMembers]) => {
+    Promise.all([
+      api.getProject(projectId),
+      api.listMembers(projectId),
+      api.getChanges(projectId),
+      api.listRequests(projectId),
+    ])
+      .then(([loadedProject, loadedMembers, loadedEntries, loadedRequests]) => {
         if (cancelled) return
         setProject(loadedProject)
         setMembers(loadedMembers)
+        setEntries(loadedEntries)
+        setRequests(loadedRequests)
       })
       .catch((err) => {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Could not load project')
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : 'Could not load project')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -47,21 +67,39 @@ export function ProjectPage() {
     }
   }, [projectId, reloadKey])
 
-  const viewerIsAdmin = members.some(
-    (member) => member.id === profile?.id && member.is_admin,
+  const viewerIsAdmin = Boolean(
+    profile && project?.admins.includes(profile.id),
   )
+  const entriesById = new Map(entries.map((entry) => [entry.id, entry]))
 
-  async function handlePromote(userId: string) {
-    if (!projectId) return
+  const refresh = () => setReloadKey((key) => key + 1)
+
+  async function run<T>(work: () => Promise<T>): Promise<T | undefined> {
     setError('')
-    setBusyId(userId)
+    setBusy(true)
     try {
-      await api.promoteMember(projectId, userId)
-      setReloadKey((key) => key + 1)
+      return await work()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not promote member')
+      setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
-      setBusyId('')
+      setBusy(false)
+    }
+  }
+
+  async function handleSend(text: string, kind?: 'changeset' | 'answer') {
+    if (!projectId) return
+    const result = await run(() => api.sendInput(projectId, text, kind))
+    if (result) setPending(result)
+  }
+
+  async function handleConfirm(operations: Operation[]) {
+    if (!projectId || pending?.kind !== 'changeset') return
+    const done = await run(() =>
+      api.confirmChangeset(projectId, pending.text, operations),
+    )
+    if (done) {
+      setPending(null)
+      refresh()
     }
   }
 
@@ -72,20 +110,7 @@ export function ProjectPage() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // Clipboard can be blocked (permissions, insecure context) — show the
-      // link so it can still be copied by hand.
       setError(`Copy this invite link: ${link}`)
-    }
-  }
-
-  async function handleExit() {
-    if (!projectId) return
-    setError('')
-    try {
-      await api.exitProject(projectId)
-      navigate('/')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not leave project')
     }
   }
 
@@ -112,8 +137,8 @@ export function ProjectPage() {
           <div>
             <h1 className="text-2xl font-semibold">{project.name}</h1>
             <p className="text-muted-foreground text-sm">
-              {project.ir.length}{' '}
-              {project.ir.length === 1 ? 'entry' : 'entries'}
+              {entries.length} {entries.length === 1 ? 'entry' : 'entries'} ·{' '}
+              {members.length} {members.length === 1 ? 'member' : 'members'}
             </p>
           </div>
           <div className="flex gap-2">
@@ -122,13 +147,64 @@ export function ProjectPage() {
                 {copied ? 'Link copied' : 'Copy invite link'}
               </Button>
             )}
-            <Button variant="outline" onClick={handleExit}>
-              Leave project
+            <Button
+              variant="outline"
+              onClick={() =>
+                projectId &&
+                run(() => api.exitProject(projectId)).then(() => navigate('/'))
+              }
+            >
+              Leave
             </Button>
           </div>
         </div>
 
         {error && <p className="text-destructive text-sm">{error}</p>}
+
+        <PendingRequests
+          requests={requests}
+          members={members}
+          entriesById={entriesById}
+          currentUserId={profile?.id ?? ''}
+          isAdmin={viewerIsAdmin}
+          busy={busy}
+          onApprove={(id) =>
+            projectId &&
+            run(() => api.approveRequest(projectId, id)).then(refresh)
+          }
+          onReject={(id) =>
+            projectId && run(() => api.rejectRequest(projectId, id)).then(refresh)
+          }
+          onEdit={(id, operations) =>
+            projectId &&
+            run(() => api.editRequest(projectId, id, operations)).then(refresh)
+          }
+        />
+
+        <Feed entries={entries} members={members} />
+
+        {pending?.kind === 'changeset' && (
+          <ChangesetPreview
+            operations={pending.operations}
+            unresolved={pending.unresolved}
+            entriesById={entriesById}
+            busy={busy}
+            onConfirm={handleConfirm}
+            onDiscard={() => setPending(null)}
+          />
+        )}
+
+        {pending?.kind === 'answer' && (
+          <AnswerCard
+            question={pending.text}
+            segments={pending.segments}
+            busy={busy}
+            onDismiss={() => setPending(null)}
+            onTreatAsStatement={() => handleSend(pending.text, 'changeset')}
+          />
+        )}
+
+        <Composer busy={busy} onSend={handleSend} />
 
         <Card>
           <CardHeader>
@@ -140,7 +216,7 @@ export function ProjectPage() {
                 key={member.id}
                 className="flex items-center justify-between gap-4 border-b py-2 last:border-b-0"
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-sm">
                   <span>{member.username}</span>
                   {member.id === profile?.id && (
                     <span className="text-muted-foreground text-xs">(you)</span>
@@ -155,10 +231,13 @@ export function ProjectPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => handlePromote(member.id)}
-                    disabled={busyId === member.id}
+                    disabled={busy}
+                    onClick={() =>
+                      projectId &&
+                      run(() => api.promoteMember(projectId, member.id)).then(refresh)
+                    }
                   >
-                    {busyId === member.id ? 'Promoting…' : 'Make admin'}
+                    Make admin
                   </Button>
                 )}
               </div>
