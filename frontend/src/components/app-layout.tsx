@@ -33,7 +33,7 @@ export function AppLayout({
               <span className="bg-brand size-2.5 rounded-full transition-transform group-hover:scale-110" />
               <span className="bg-foreground/25 size-2.5 rounded-full transition-transform group-hover:scale-110" />
             </span>
-            Context Translator
+            Contextor
           </Link>
           <nav className="flex items-center gap-2">
             <Link to="/profile" className={buttonVariants({ variant: 'ghost' })}>

@@ -1,4 +1,4 @@
-# Context Translator
+# Contextor
 
 ---
 

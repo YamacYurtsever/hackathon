@@ -1,4 +1,4 @@
-# Context Translator
+# Contextor
 
 An n-way translator between professional contexts — see `CLAUDE.md` for the full pitch and design.
 
