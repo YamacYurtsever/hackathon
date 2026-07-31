@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 
+import { AppLayout } from '@/components/app-layout'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -16,7 +16,6 @@ import { useAuth } from '@/lib/auth-context'
 
 export function ProfilePage() {
   const { profile, setProfile } = useAuth()
-  const navigate = useNavigate()
   const [description, setDescription] = useState(
     typeof profile?.content.description === 'string'
       ? profile.content.description
@@ -45,21 +44,8 @@ export function ProfilePage() {
     }
   }
 
-  async function handleLogout() {
-    await api.logout()
-    setProfile(null)
-    navigate('/login')
-  }
-
   return (
-    <div className="mx-auto flex min-h-svh max-w-2xl flex-col gap-6 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{profile.username}</h1>
-        <Button variant="outline" onClick={handleLogout}>
-          Log out
-        </Button>
-      </div>
-
+    <AppLayout>
       <Card>
         <CardHeader>
           <CardTitle>Your context</CardTitle>
@@ -92,6 +78,6 @@ export function ProfilePage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </AppLayout>
   )
 }

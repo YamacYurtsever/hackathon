@@ -1,4 +1,4 @@
-import type { Profile } from '@/types/ir'
+import type { Profile, Project } from '@/types/ir'
 
 // Same host as the frontend (localhost) so the session cookie is same-site.
 const BASE_URL = 'http://localhost:5001/api'
@@ -52,4 +52,19 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ content }),
     }),
+
+  listProjects: () => request<Project[]>('/projects'),
+
+  listAvailableProjects: () => request<Project[]>('/projects/available'),
+
+  createProject: (name: string) =>
+    request<Project>('/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  getProject: (id: string) => request<Project>(`/projects/${id}`),
+
+  joinProject: (id: string) =>
+    request<Project>(`/projects/${id}/join`, { method: 'POST' }),
 }

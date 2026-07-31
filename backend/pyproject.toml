@@ -1,3 +1,7 @@
 [tool.vulture]
 min_confidence = 80
-paths = ["src"]
+paths = ["src", "tests"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -53,6 +53,18 @@ def create_project(name: str, creator_id: str) -> dict:
     return project
 
 
+def get_project(project_id: str) -> dict | None:
+    return projects.get(project_id)
+
+
+def projects_for_user(user_id: str) -> list[dict]:
+    return [p for p in projects.values() if user_id in p["users"]]
+
+
+def projects_without_user(user_id: str) -> list[dict]:
+    return [p for p in projects.values() if user_id not in p["users"]]
+
+
 def create_entry(content: dict, author: str) -> dict:
     entry = {"id": _new_id(), "content": content, "author": author, "created_at": _now()}
     entries[entry["id"]] = entry

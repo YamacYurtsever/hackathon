@@ -28,7 +28,7 @@ export function LoginPage() {
     setSubmitting(true)
     try {
       setProfile(await api.login(username, password))
-      navigate('/profile')
+      navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

@@ -2,8 +2,12 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { AuthProvider } from '@/components/auth-provider'
 import { useAuth } from '@/lib/auth-context'
+import { HomePage } from '@/pages/home'
+import { JoinProjectPage } from '@/pages/join-project'
 import { LoginPage } from '@/pages/login'
+import { NewProjectPage } from '@/pages/new-project'
 import { ProfilePage } from '@/pages/profile'
+import { ProjectPage } from '@/pages/project'
 import { SignupPage } from '@/pages/signup'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -15,7 +19,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
   const { profile, loading } = useAuth()
   if (loading) return null
-  return profile ? <Navigate to="/profile" replace /> : children
+  return profile ? <Navigate to="/" replace /> : children
 }
 
 function App() {
@@ -40,6 +44,14 @@ function App() {
             }
           />
           <Route
+            path="/"
+            element={
+              <RequireAuth>
+                <HomePage />
+              </RequireAuth>
+            }
+          />
+          <Route
             path="/profile"
             element={
               <RequireAuth>
@@ -47,7 +59,31 @@ function App() {
               </RequireAuth>
             }
           />
-          <Route path="*" element={<Navigate to="/profile" replace />} />
+          <Route
+            path="/projects/new"
+            element={
+              <RequireAuth>
+                <NewProjectPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/projects/join"
+            element={
+              <RequireAuth>
+                <JoinProjectPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/projects/:projectId"
+            element={
+              <RequireAuth>
+                <ProjectPage />
+              </RequireAuth>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

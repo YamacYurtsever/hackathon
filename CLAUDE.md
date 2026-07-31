@@ -44,8 +44,10 @@ Same fact, three different, non-obvious re-projections, each citing the IR field
 ## Tech Stack
 
 - **Frontend:** React + shadcn, ESLint
-- **Backend:** Python + Flask, Vulture
+- **Backend:** Python + Flask, Vulture, pytest
 - **LLM:** Mistral
+
+Run the backend tests with `cd backend && pytest`. Keep endpoint behaviour covered there — especially auth and permission rules, where a regression is a privilege-escalation bug rather than a visible glitch.
 
 ---
 
@@ -89,15 +91,15 @@ Real signup/login: username + password. Once logged in, the acting user is read 
 
 **Backend**
 
-- [ ] `GET /projects` — projects the logged-in user is a member of (scan `users` lists; fine at demo scale)
-- [ ] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
-- [ ] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
+- [X] `GET /projects` — projects the logged-in user is a member of (scan `users` lists; fine at demo scale)
+- [X] `POST /projects`, `GET /projects/:id` — create/fetch a project; creator is added to `users` and `admins`
+- [X] `POST /projects/:id/join` — adds the logged-in user to `users` (not `admins`)
 
 **Frontend**
 
-- [ ] Home view — lists the projects you've joined; landing page after login, entry point into a project
-- [ ] Project creation view
-- [ ] Join-project view
+- [X] Home view — lists the projects you've joined; landing page after login, entry point into a project
+- [X] Project creation view
+- [X] Join-project view
 
 ---
 

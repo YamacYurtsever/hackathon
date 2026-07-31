@@ -6,6 +6,7 @@ from flask_cors import CORS
 
 import auth
 import profiles
+import projects
 from seed import seed_medguard
 
 load_dotenv()
@@ -22,6 +23,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(profiles.bp)
+    app.register_blueprint(projects.bp)
 
     @app.get("/api/health")
     def health():
@@ -31,9 +33,10 @@ def create_app() -> Flask:
 
 
 app = create_app()
-seed_medguard()
 
 if __name__ == "__main__":
+    # Seeding lives here, not at import time, so tests get a clean store.
+    seed_medguard()
     # use_reloader=False: the reloader re-execs this module in a subprocess,
     # which would seed the in-memory store twice.
     # 5001, not 5000: macOS AirPlay Receiver squats on port 5000.
