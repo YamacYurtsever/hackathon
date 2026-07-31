@@ -3,7 +3,9 @@ from werkzeug.security import generate_password_hash
 from . import store
 
 # Content is free-form by design — these are just examples of what someone might
-# write about themselves. Nothing in the pipeline reads a fixed "role" key. The
+# write about themselves. It is one profile per person, not per project, so
+# nothing here names a project or what they own in one: that's a fact about the
+# project and belongs in its IR. Nothing in the pipeline reads a fixed "role" key. The
 # keys that earn their keep are the ones that tell re-projection what to *skip*
 # ("assume_i_know", "dont_explain") and what to lead with ("cares_about"):
 # filtering is as much a part of re-projection as wording.
@@ -14,15 +16,14 @@ EXAMPLE_PROFILES = [
             "name": "Priya Raman",
             "description": (
                 "Embedded firmware engineer, ten years in signal acquisition and "
-                "mostly biopotential front-ends. I own the sensor front-end and the "
-                "detection firmware on this project and I've been on it since kickoff. "
-                "Talk to me in sampling rates, filter topologies and ADC behaviour — "
-                "I don't need DSP or embedded work explained. What I do want to know "
-                "is when something I changed lands on someone else's plate."
+                "mostly biopotential front-ends. I work on sensor front-ends and "
+                "detection firmware. Talk to me in sampling rates, filter topologies "
+                "and ADC behaviour — I don't need DSP or embedded work explained. "
+                "What I do want to know is when something I changed lands on someone "
+                "else's plate."
             ),
             "describes_self_as": "Embedded firmware engineer. Ten years in signal acquisition, mostly biopotential front-ends.",
             "expertise": ["DSP", "ADC design", "firmware", "filter design"],
-            "on_this_project": "Owns the sensor front-end and detection firmware. Joined at kickoff.",
             "assume_i_know": "Sampling theory, filter topologies, the device signal chain end to end.",
             "dont_explain": "Anything about DSP or embedded systems.",
         },
@@ -33,15 +34,13 @@ EXAMPLE_PROFILES = [
             "name": "Marcus Oyelaran",
             "description": (
                 "Clinical scientist. I design and run the validation studies that "
-                "produce our performance claims, and on this project I own the "
-                "false-positive characterisation study and the clinical evidence "
-                "package. Study design, arrhythmia physiology and statistics are my "
-                "own ground. Firmware and DSP are not — tell me what a signal chain "
+                "produce performance claims, and I own the clinical evidence behind "
+                "them. Study design, cardiac physiology and statistics are my own "
+                "ground. Firmware and DSP are not — tell me what a signal chain "
                 "change does to what I'm measuring, not how it works."
             ),
             "describes_self_as": "Clinical scientist. I design and run the validation studies that produce our performance claims.",
             "expertise": ["study design", "cardiac physiology", "biostatistics"],
-            "on_this_project": "Owns the false-positive characterisation study and the clinical evidence package.",
             "assume_i_know": "Study protocols, arrhythmia physiology, what invalidates a result.",
             "dont_explain": "Statistics or clinical trial methodology.",
             "weak_on": "Firmware and DSP — explain signal chain changes in terms of what they do, not how.",
@@ -53,15 +52,13 @@ EXAMPLE_PROFILES = [
             "name": "Ellen Whitcombe",
             "description": (
                 "Regulatory counsel for medical devices, fifteen years of 510(k) and "
-                "PMA submissions. I own the 510(k) here and joined about three months "
-                "in. I know the framework and what triggers a new submission, so skip "
-                "the primer. Skip the engineering detail too: tell me what changed and "
-                "whether it's significant, and I'll work out what it means for the "
-                "filing."
+                "PMA submissions. I know the framework and what triggers a new "
+                "submission, so skip the primer. Skip the engineering detail too: "
+                "tell me what changed and whether it's significant, and I'll work out "
+                "what it means for the filing."
             ),
             "describes_self_as": "Regulatory counsel, medical devices. Fifteen years of 510(k) and PMA submissions.",
             "expertise": ["FDA device regulation", "21 CFR", "submission strategy"],
-            "on_this_project": "Owns the 510(k) submission. Joined three months in.",
             "assume_i_know": "The regulatory framework and what triggers a new submission.",
             "weak_on": "Engineering detail — tell me what changed and whether it is significant, not how it works.",
         },
@@ -71,15 +68,13 @@ EXAMPLE_PROFILES = [
         "content": {
             "name": "Dan Foster",
             "description": (
-                "Ops lead. I own the launch plan, the budget and the vendor "
-                "commitments, which on this project means the hospital pilot date and "
-                "the burn rate. I'm not an engineer or a scientist and don't need to "
-                "be — I need consequences, not mechanisms. If something moves a date "
-                "or a cost, that's mine. If it doesn't, it's noise."
+                "Ops lead. I own launch plans, budgets and vendor commitments — "
+                "dates and burn rate. I'm not an engineer or a scientist and don't "
+                "need to be: I need consequences, not mechanisms. If something moves "
+                "a date or a cost, that's mine. If it doesn't, it's noise."
             ),
             "describes_self_as": "Ops lead. I own the launch plan, budget and vendor commitments.",
             "expertise": ["program management", "budgeting", "vendor management"],
-            "on_this_project": "Owns the hospital pilot launch date and the burn rate.",
             "cares_about": "Anything that moves a date or a cost. Everything else is noise.",
             "weak_on": "Both the engineering and the science — I need consequences, not mechanisms.",
         },
