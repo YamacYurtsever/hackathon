@@ -2,37 +2,55 @@ from werkzeug.security import generate_password_hash
 
 import store
 
+# Content is free-form by design — these are just examples of what someone might
+# write about themselves. Nothing in the pipeline reads a fixed "role" key. The
+# keys that earn their keep are the ones that tell re-projection what to *skip*
+# ("assume_i_know", "dont_explain") and what to lead with ("cares_about"):
+# filtering is as much a part of re-projection as wording.
 EXAMPLE_PROFILES = [
     {
         "username": "engineer",
         "content": {
-            "role": "engineer",
-            "expertise": ["signal processing", "embedded firmware"],
-            "history_summary": "Owns the sensor and firmware design for MedGuard.",
+            "name": "Priya Raman",
+            "describes_self_as": "Embedded firmware engineer. Ten years in signal acquisition, mostly biopotential front-ends.",
+            "expertise": ["DSP", "ADC design", "firmware", "filter design"],
+            "on_this_project": "Owns the sensor front-end and detection firmware. Joined at kickoff.",
+            "assume_i_know": "Sampling theory, filter topologies, the device signal chain end to end.",
+            "dont_explain": "Anything about DSP or embedded systems.",
         },
     },
     {
         "username": "biologist",
         "content": {
-            "role": "biologist",
-            "expertise": ["assay validation", "false-positive analysis"],
-            "history_summary": "Runs the validation studies MedGuard's detection relies on.",
+            "name": "Marcus Oyelaran",
+            "describes_self_as": "Clinical scientist. I design and run the validation studies that produce our performance claims.",
+            "expertise": ["study design", "cardiac physiology", "biostatistics"],
+            "on_this_project": "Owns the false-positive characterisation study and the clinical evidence package.",
+            "assume_i_know": "Study protocols, arrhythmia physiology, what invalidates a result.",
+            "dont_explain": "Statistics or clinical trial methodology.",
+            "weak_on": "Firmware and DSP — explain signal chain changes in terms of what they do, not how.",
         },
     },
     {
         "username": "lawyer",
         "content": {
-            "role": "lawyer",
-            "expertise": ["FDA 510(k) submissions", "medical device regulation"],
-            "history_summary": "Manages MedGuard's regulatory filings.",
+            "name": "Ellen Whitcombe",
+            "describes_self_as": "Regulatory counsel, medical devices. Fifteen years of 510(k) and PMA submissions.",
+            "expertise": ["FDA device regulation", "21 CFR", "submission strategy"],
+            "on_this_project": "Owns the 510(k) submission. Joined three months in.",
+            "assume_i_know": "The regulatory framework and what triggers a new submission.",
+            "weak_on": "Engineering detail — tell me what changed and whether it is significant, not how it works.",
         },
     },
     {
         "username": "business",
         "content": {
-            "role": "business",
-            "expertise": ["timeline and budget planning"],
-            "history_summary": "Tracks MedGuard's launch timeline and cost.",
+            "name": "Dan Foster",
+            "describes_self_as": "Ops lead. I own the launch plan, budget and vendor commitments.",
+            "expertise": ["program management", "budgeting", "vendor management"],
+            "on_this_project": "Owns the hospital pilot launch date and the burn rate.",
+            "cares_about": "Anything that moves a date or a cost. Everything else is noise.",
+            "weak_on": "Both the engineering and the science — I need consequences, not mechanisms.",
         },
     },
 ]
