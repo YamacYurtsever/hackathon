@@ -146,15 +146,27 @@ Pure backend — no UI yet. Exercised via the API client and curl. Prove the pip
 **Backend**
 
 - [ ] Intent classification: is this input a statement of fact or a question? Cheap first pass, since the two paths diverge completely
-- [ ] `POST /projects/:id/input` — one endpoint behind the single input box. Returns either `{kind: "entry", …}` (statement → extracted, stored) or `{kind: "answer", …}` (question → grounded answer, nothing stored)
+- [ ] `POST /projects/:id/input` — one endpoint behind the single input box. Returns either `{kind: "changeset", …}` (statement → proposed changes, **nothing stored**) or `{kind: "answer", …}` (question → grounded answer, nothing stored)
 - [ ] Accept an optional `kind` override on that endpoint, so the UI's "treat it as the other thing" doesn't need a second route
-- [ ] Extraction prompt: NL statement → structured IR `content` JSON; creates the entry and appends its id to `project.ir`
+- [ ] Extraction prompt: NL statement + existing project IR → a changeset of operations, `create` and/or `update` — one message can add a fact and revise an old one at once
+- [ ] `update` operations name the entry they revise and carry the new `content`, so the UI can diff old against new
 - [ ] Answer prompt: question + viewer's profile + project IR → grounded prose answer with sources
 - [ ] Re-projection prompt: IR entries + viewer's profile `content` → cohesive summary as `{text, source_entry_ids}` segments
 - [ ] Re-projection **filters**: entries irrelevant to the viewer are omitted entirely, not restated blandly. Choosing what to leave out is part of the job
 - [ ] Re-projection surfaces implications, including ones spanning several entries — not just a restatement of each fact
 - [ ] `GET /projects/:id/view` — re-projects the project for the logged-in user's profile, returns the segment array
 - [ ] `GET /projects/:id/changes?since=` — entries with `created_at` after the given timestamp
+
+**Write path (the only way the IR changes)**
+
+- [ ] `POST /projects/:id/requests` — author confirms a changeset; stored as a pending request. This is the first point anything is persisted
+- [ ] `GET /projects/:id/requests` — pending requests for the project
+- [ ] `PUT /projects/:id/requests/:rid` — hand-edit a pending request's operations. Allowed for its author and for admins
+- [ ] An applied entry's `author` is the original proposer, never the admin who edited it — editing isn't authorship
+- [ ] Confirming always creates a request, even when the author is an admin — one path, and the approval step stays demoable
+- [ ] `POST /projects/:id/requests/:rid/approve` / `…/reject` — admin only, enforced server-side, no exceptions. Approving applies every operation in the changeset atomically
+- [ ] Rejecting deletes the request; a rejected proposal isn't a fact and doesn't belong in history
+- [ ] Reject an `update` whose target entry no longer exists rather than silently recreating it
 
 **Grounding (verify in code, don't trust the prompt)**
 
@@ -213,9 +225,45 @@ Summary — cohesive prose, for you     IR — the complete record
 
 This is the demo in one gesture: read a paragraph written for you, flip, and see the neutral facts it was built from — then switch profiles and watch the prose change while those facts don't.
 
-**One input, not two.** Splitting "post a fact" from "ask a question" makes people classify their own thought before typing. There's a single box and the backend decides: a statement becomes an IR entry, a question gets a grounded answer. *"Bumped sampling rate to 2kHz"* is a fact; *"does that affect my filing?"* is a question — you shouldn't have to tell us which.
+**One input, not two.** Splitting "post a fact" from "ask a question" makes people classify their own thought before typing. There's a single box and the backend decides: a statement becomes a change to the IR, a question gets a grounded answer. *"Bumped sampling rate to 2kHz"* is a fact; *"does that affect my filing?"* is a question — you shouldn't have to tell us which.
 
 Misclassification hurts in both directions, so it can't be silent: a fact swallowed as a question never gets recorded, and a question stored as a fact pollutes the IR. The UI always says which happened, and offers a one-click "no, treat it as the other thing".
+
+### The write path: changeset → author confirms → admin approves
+
+A statement doesn't become an entry directly. Extraction produces a **changeset** — one message can create a new entry *and* amend existing ones, and often does: *"actually we settled on 4kHz, and that pushes validation another week"* both revises a recorded fact and adds a new one. Then two gates before anything lands:
+
+```
+"bumped sampling to 4kHz,
+ pushes validation a week"
+        ↓  extraction
+┌─────────────────────────────┐
+│ Proposed changes            │   ← nothing stored yet
+│ • UPDATE sampling_rate      │
+│     2kHz → 4kHz             │
+│ • NEW validation_window     │
+│     +1 week                 │
+│        [ NL │ IR ]          │   ← same toggle idea
+│  [confirm] [edit] [discard] │
+└─────────────────────────────┘
+        ↓  author confirms
+   pending request on the project
+        ↓  admin approves
+      applied to the IR
+```
+
+**Gate 1 — the author confirms.** Extraction is a guess at what someone meant, so they get to see it before anyone else does: *"here's what I understood."* Nothing is stored until they confirm, so an unconfirmed misread leaves no trace. This is also where the NL/IR toggle earns its keep a second time — read the change as plain language or as a raw diff of `content`.
+
+**Gate 2 — an admin approves.** Confirmed changesets become pending requests on the project. Only an admin can apply them, and that's not optional. This is the one place the IR can be written, so it's the one place that needs a gate.
+
+**Both gates allow hand-editing.** At gate 1 the author can correct our reading before submitting; at gate 2 an admin can fix a small error instead of rejecting and making someone retype. Editing means editing the raw `content` — so IR mode of the diff view is the editable one, which doubles as the escape hatch when extraction misfires during a live demo.
+
+An edited request doesn't reassign authorship: the applied entry's `author` stays the original proposer. We deliberately don't track *who* edited it — that only pays off alongside persistent request history, which is a Depth item we may not reach. Add it then, not speculatively.
+
+Settled:
+
+- **Always queue.** Even when the author is an admin, their confirmation creates a request they then approve. One path instead of two, and the approval step is demoable without a second account.
+- **No bounce-back.** An admin edit doesn't return to the author for re-confirmation; it applies on approval.
 
 Same facts, two renderings. **Summary** is written for you and nobody else sees it in quite that form. **IR** is the neutral timeline everyone shares, identical for every member: time, author, and the structured fact itself. Flipping between them makes "the IR is the source of truth" something you can *see* rather than something we assert — and it's the natural demo moment: switch profiles, watch the summary change completely, flip to IR and it's byte-identical.
 
@@ -230,11 +278,26 @@ The writing half — getting facts *into* the project and seeing them land. Buil
 **Frontend**
 
 - [ ] Single input box, always visible below the panel — posts to `/input`, shows a working state while Mistral runs
-- [ ] Result is never ambiguous: say whether the input was recorded as a fact or answered as a question, with a one-click "treat it as the other thing"
+- [ ] Result is never ambiguous: say whether the input was read as a fact or answered as a question, with a one-click "treat it as the other thing"
 - [ ] Feed: chat-style timeline, one row per IR entry — time, author username, the structured fact rendered readably
 - [ ] An entry expands to its raw `content` JSON for anyone who wants the unvarnished version
-- [ ] Feed refreshes after posting, newest last (it reads as a conversation)
+- [ ] Feed refreshes after a change is applied, newest last (it reads as a conversation)
 - [ ] Empty state before the first message
+
+**Frontend — confirmation (gate 1)**
+
+- [ ] Changeset preview after a statement: creates and updates listed together, updates shown as a diff of old vs new `content`
+- [ ] NL/IR toggle on the preview — read the change as plain language or as the raw diff
+- [ ] Confirm / edit / discard; discarding leaves nothing behind, since nothing was stored
+- [ ] Editing is hand-editing the raw `content` in IR mode — the escape hatch when extraction gets it wrong
+- [ ] Make it obvious this is *our reading* of what you said, not yet a fact
+
+**Frontend — approval (gate 2)**
+
+- [ ] Pending-requests list on the project, visible to everyone (transparency), actionable only by admins
+- [ ] Approve / reject per request, with the same diff view the author confirmed
+- [ ] Admins can hand-edit a request before approving, in the same IR-mode editor the author used
+- [ ] Non-admins see their own requests are waiting, so nobody wonders why their fact never landed
 
 ---
 
@@ -274,17 +337,17 @@ The reading half — the same facts, re-projected through *your* context, plus a
 
 **Backend**
 
-- [ ] Meaning-preservation pass: prompt checks a claim against its source IR entry, flags drift/invention
-- [ ] Amendment flow: extraction of the proposal + diff against existing entry `content` + apply-on-approval logic
-- [ ] Amendment approval enforced server-side — only a user in `project.admins` can approve/reject, no exceptions
-- [ ] Version history: append-only log of `{entry_id, content, author, created_at}` written on every update
+The changeset/confirm/approve flow is no longer here — it became the core write path in 6 and 7.
+
+- [ ] Meaning-preservation pass: prompt checks a summary segment against the entries it cites, flags drift/invention
+- [ ] Version history: append-only log of `{entry_id, content, author, created_at}` written on every applied update
   - Potential recovery to old versions?
 
 **Frontend**
 
-- [ ] Amendment proposal UI + admin approval UI
 - [ ] Version history view
-- [ ] Attribution UI: show `author` on each entry/claim
+- [ ] Attribution UI: show `author` on each entry
+- [ ] Request history — who proposed what, who approved it, when
 
 ---
 
