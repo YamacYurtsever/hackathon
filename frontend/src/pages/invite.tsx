@@ -73,7 +73,7 @@ export function InvitePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex gap-2">
-            <Button onClick={handleJoin} disabled={joining}>
+            <Button variant="brand" onClick={handleJoin} disabled={joining}>
               {joining ? 'Joining…' : `Join ${name}`}
             </Button>
             <Button variant="ghost" onClick={() => navigate('/')}>

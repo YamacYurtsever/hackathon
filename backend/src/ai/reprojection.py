@@ -8,28 +8,9 @@ and the traceability is enforced here, not asked for in the prompt.
 
 import hashlib
 import json
-import re
 
 from . import mistral
-
-# Entry ids belong in source_entry_ids, but the model keeps inlining them into
-# the prose too — "the 2 kHz sampling rate (24f65462-…) is now fixed". Asking it
-# not to in the prompt doesn't hold, so they're stripped here. Same principle as
-# the citation check: verify in code, don't trust the prompt.
-_UUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-_PARENTHESISED_IDS = re.compile(rf"\s*\((?:{_UUID})(?:\s*,\s*(?:{_UUID}))*\)")
-_BARE_ID = re.compile(_UUID)
-
-
-def strip_entry_ids(text: str) -> str:
-    """Removes entry ids the model wrote into prose, and tidies what's left."""
-    cleaned = _PARENTHESISED_IDS.sub("", text)
-    cleaned = _BARE_ID.sub("", cleaned)
-    # Whatever punctuation the removal stranded: doubled spaces, a space before
-    # a comma or full stop, an empty pair of brackets.
-    cleaned = re.sub(r"\(\s*[,\s]*\)", "", cleaned)
-    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
-    return re.sub(r"\s{2,}", " ", cleaned).strip()
+from .ids import strip_entry_ids
 
 _SEGMENT_CONTRACT = """Return {"segments": [{"text": "...", "source_entry_ids": ["..."]}]}.
 
@@ -242,7 +223,7 @@ def welcome(profile: dict | None, model: str | None = None) -> dict:
         model=model or mistral.DEFAULT_MODEL,
     )
     text = result.data.get("text")
-    return {"text": text.strip() if isinstance(text, str) else ""}
+    return {"text": strip_entry_ids(text) if isinstance(text, str) else ""}
 
 
 # --- summary cache ---

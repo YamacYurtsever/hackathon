@@ -69,7 +69,7 @@ export function SignupPage() {
               />
             </div>
             {error && <p className="text-destructive text-sm">{error}</p>}
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" variant="brand" disabled={submitting}>
               {submitting ? 'Creating account…' : 'Sign up'}
             </Button>
             <p className="text-muted-foreground text-center text-sm">

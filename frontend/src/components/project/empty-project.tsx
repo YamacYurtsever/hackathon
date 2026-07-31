@@ -34,7 +34,7 @@ export function EmptyProject({
   loading: boolean
 }) {
   return (
-    <Card className="min-h-0 flex-1 overflow-hidden py-0">
+    <Card className="ring-border/70 min-h-0 flex-1 overflow-hidden py-0 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.12)]">
       <CardContent className="h-full overflow-y-auto p-6">
         <div className="mx-auto flex max-w-xl flex-col gap-6">
           <div className="flex flex-col gap-2">
@@ -52,7 +52,7 @@ export function EmptyProject({
           <ol className="flex flex-col gap-4">
             {steps.map((step, index) => (
               <li key={step.title} className="flex gap-3">
-                <span className="bg-secondary text-secondary-foreground flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+                <span className="bg-brand/10 text-brand ring-brand/20 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ring-1">
                   {index + 1}
                 </span>
                 <div className="flex flex-col gap-1">

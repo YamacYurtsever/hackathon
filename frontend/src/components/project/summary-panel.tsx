@@ -24,7 +24,7 @@ function Prose({
               type="button"
               onClick={() => onCitationClick(entryId)}
               title="Show the entry this came from"
-              className="text-muted-foreground hover:text-foreground ml-0.5 align-super text-[0.65rem] hover:underline"
+              className="text-brand/70 hover:bg-brand/10 hover:text-brand ml-0.5 rounded px-0.5 align-super text-[0.65rem] font-medium transition-colors"
             >
               [{numbers.get(entryId)}]
             </button>
@@ -54,13 +54,17 @@ export function SummaryPanel({
 }) {
   if (answer) {
     return (
-      <Card className="min-h-0 flex-1 overflow-hidden py-0">
+      <Card className="ring-border/70 min-h-0 flex-1 overflow-hidden py-0 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.12)]">
         <CardContent className="flex h-full flex-col gap-4 overflow-y-auto p-6">
-          <p className="text-muted-foreground text-sm">“{answer.question}”</p>
+          <p className="border-brand/40 text-muted-foreground border-l-2 pl-3 text-sm italic">
+            {answer.question}
+          </p>
           {answer.pending ? (
-            <p className="text-muted-foreground animate-pulse text-sm">
-              Thinking…
-            </p>
+            <span className="flex items-center gap-1.5 pl-3">
+              <span className="bg-brand size-1.5 animate-bounce rounded-full [animation-delay:-0.3s]" />
+              <span className="bg-brand size-1.5 animate-bounce rounded-full [animation-delay:-0.15s]" />
+              <span className="bg-brand size-1.5 animate-bounce rounded-full" />
+            </span>
           ) : (
             <Prose
               segments={answer.segments}
@@ -75,7 +79,7 @@ export function SummaryPanel({
 
   if (loading) {
     return (
-      <Card className="min-h-0 flex-1 py-0">
+      <Card className="ring-border/70 min-h-0 flex-1 py-0 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.12)]">
         <CardContent className="text-muted-foreground p-6 text-center text-sm">
           Reading the project for you…
         </CardContent>
@@ -85,7 +89,7 @@ export function SummaryPanel({
 
   if (segments.length === 0) {
     return (
-      <Card className="min-h-0 flex-1 py-0">
+      <Card className="ring-border/70 min-h-0 flex-1 py-0 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.12)]">
         <CardContent className="text-muted-foreground p-6 text-center text-sm">
           Nothing here concerns you yet.
         </CardContent>
@@ -94,7 +98,7 @@ export function SummaryPanel({
   }
 
   return (
-    <Card className="min-h-0 flex-1 overflow-hidden py-0">
+    <Card className="ring-border/70 min-h-0 flex-1 overflow-hidden py-0 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.12)]">
       {/* Long summaries scroll here rather than pushing the composer off-screen. */}
       <CardContent className="h-full overflow-y-auto p-6">
         <Prose

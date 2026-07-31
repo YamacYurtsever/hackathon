@@ -110,9 +110,11 @@ export const api = {
   listRequests: (id: string) => request<ChangeRequest[]>(`/projects/${id}/requests`),
 
   // The author submitting for review — the first point anything is stored.
-  // Submitting is not merging: each change becomes its own pending request.
+  // Each change becomes its own request. An admin's own submissions are merged
+  // on the spot, so `merged` carries the entry ids that landed and `requests`
+  // only what's still waiting on someone.
   submitChanges: (id: string, text: string, operations: Operation[]) =>
-    request<ChangeRequest[]>(`/projects/${id}/requests`, {
+    request<{ requests: ChangeRequest[]; merged: string[] }>(`/projects/${id}/requests`, {
       method: 'POST',
       body: JSON.stringify({ text, operations }),
     }),

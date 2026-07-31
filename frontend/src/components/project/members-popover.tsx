@@ -46,26 +46,31 @@ export function MembersPopover({
               key={member.id}
               className="flex items-center justify-between gap-3 border-b py-2 last:border-b-0"
             >
-              <div className="flex items-center gap-2">
-                <span>{member.username}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate">{member.username}</span>
                 {member.id === currentUserId && (
-                  <span className="text-muted-foreground text-xs">(you)</span>
-                )}
-                {member.is_admin && (
-                  <span className="bg-secondary text-secondary-foreground rounded px-1.5 py-0.5 text-xs">
-                    admin
+                  <span className="text-muted-foreground shrink-0 text-xs">
+                    (you)
                   </span>
                 )}
               </div>
-              {viewerIsAdmin && !member.is_admin && (
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => onPromote(member.id)}
-                >
-                  Make admin
-                </Button>
+              {/* Status and action share the right edge, so the column reads
+                  down at a glance instead of ragging with each name. */}
+              {member.is_admin ? (
+                <span className="bg-brand/10 text-brand ring-brand/20 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ring-1">
+                  admin
+                </span>
+              ) : (
+                viewerIsAdmin && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => onPromote(member.id)}
+                  >
+                    Make admin
+                  </Button>
+                )
               )}
             </div>
           ))}

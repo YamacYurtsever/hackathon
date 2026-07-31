@@ -23,6 +23,7 @@ export function ChangesetDialog({
   dropped,
   entriesById,
   busy,
+  viewerIsAdmin,
   onSubmit,
   onDiscard,
 }: {
@@ -30,6 +31,9 @@ export function ChangesetDialog({
   dropped: number
   entriesById: Map<string, IREntry>
   busy: boolean
+  /** An admin's own changes are merged as soon as they confirm here, so this
+   * dialog is their only gate rather than the first of two. */
+  viewerIsAdmin: boolean
   onSubmit: (operations: Operation[]) => void
   onDiscard: () => void
 }) {
@@ -52,8 +56,9 @@ export function ChangesetDialog({
         <DialogHeader>
           <DialogTitle>Here's what we understood</DialogTitle>
           <DialogDescription>
-            Nothing is recorded yet. Keep the ones you meant, fix any we got
-            wrong, then send them for review — an admin still has to merge them.
+            {viewerIsAdmin
+              ? "Nothing is recorded yet. Keep the ones you meant, fix any we got wrong — confirming adds them to the project, since you're an admin."
+              : 'Nothing is recorded yet. Keep the ones you meant, fix any we got wrong, then send them for review — an admin still has to merge them.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -99,8 +104,12 @@ export function ChangesetDialog({
           <Button variant="ghost" onClick={onDiscard} disabled={busy}>
             Discard
           </Button>
-          <Button onClick={() => onSubmit(kept)} disabled={busy || !kept.length}>
-            {busy ? 'Submitting…' : `Submit ${kept.length} for review`}
+          <Button variant="brand" onClick={() => onSubmit(kept)} disabled={busy || !kept.length}>
+            {busy
+              ? 'Saving…'
+              : viewerIsAdmin
+                ? `Add ${kept.length} to the project`
+                : `Submit ${kept.length} for review`}
           </Button>
         </DialogFooter>
       </DialogContent>

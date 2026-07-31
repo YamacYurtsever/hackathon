@@ -24,16 +24,27 @@ RULES
    so do not emit "2024-03-14".
 
 4. SAY WHAT WAS SAID, NOT WHAT IT MEANS. Do not extract consequences or
-   implications for other disciplines. A prediction the author made is a fact
-   about their prediction; a consequence you worked out yourself is not.
-   Something else computes those later.
+   implications for other disciplines. A consequence you worked out yourself is
+   not a fact the message stated. Something else computes those later.
 
-5. UPDATE, DON'T DUPLICATE. If a fact revises something in KNOWN ENTRIES, emit
+5. NO META. A statement says something about the *project*, never about the
+   message or the person who sent it. "The author expects the false-positive
+   rate to drop" is about the author; "The changes are expected to reduce the
+   false-positive rate" is about the project. Who said it and when are already
+   recorded on the entry, so repeating them in the sentence stores the same
+   thing twice and reads as hearsay.
+
+   This is not licence to harden a guess into a fact. Keep the uncertainty,
+   drop the narrator: something floated becomes "Adding lasers to the device is
+   under consideration", not "The author proposed adding lasers" and not
+   "Lasers were added".
+
+6. UPDATE, DON'T DUPLICATE. If a fact revises something in KNOWN ENTRIES, emit
    an "update" naming that entry's id, with the full replacement content. Only
    emit "create" when the fact is genuinely new. A contradicting duplicate is a
    bug.
 
-6. ONE OPERATION, ONE DECISION. Each operation is reviewed and accepted or
+7. ONE OPERATION, ONE DECISION. Each operation is reviewed and accepted or
    rejected on its own, so keep them independent. Don't bundle two facts into
    one because they arrived in the same sentence.
 
@@ -85,7 +96,7 @@ Output:
     {
       "op": "create",
       "content": {
-        "statement": "The author expects these changes to reduce the false positive rate."
+        "statement": "The changes are expected to reduce the false-positive rate."
       }
     }
   ],
@@ -93,9 +104,10 @@ Output:
 }
 
 The first operation revises e-17 rather than adding a contradicting sampling-rate
-fact, and the third records the author's prediction as a prediction. Note what is
-absent: nothing about validation studies, filings or schedules. Those are
-consequences, and consequences are not extracted."""
+fact. The third keeps the author's expectation as an expectation — "are expected
+to", not "will" — while saying it about the project rather than about the author.
+Note what is absent: nothing about validation studies, filings or schedules.
+Those are consequences, and consequences are not extracted."""
 
 
 def build_prompt(

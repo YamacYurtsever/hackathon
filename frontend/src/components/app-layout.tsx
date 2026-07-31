@@ -25,9 +25,14 @@ export function AppLayout({
 
   return (
     <div className={fill ? 'flex h-svh flex-col' : 'min-h-svh'}>
-      <header className="shrink-0 border-b">
+      <header className="bg-background/70 sticky top-0 z-30 shrink-0 border-b backdrop-blur-md">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 p-4">
-          <Link to="/" className="font-semibold">
+          <Link to="/" className="group flex items-center gap-2 font-semibold">
+            {/* The two readings, side by side, as a mark. */}
+            <span className="flex items-center gap-0.5">
+              <span className="bg-brand size-2.5 rounded-full transition-transform group-hover:scale-110" />
+              <span className="bg-foreground/25 size-2.5 rounded-full transition-transform group-hover:scale-110" />
+            </span>
             Context Translator
           </Link>
           <nav className="flex items-center gap-2">

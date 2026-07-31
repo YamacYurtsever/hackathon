@@ -46,9 +46,17 @@ export function OperationCard({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border p-3">
-      <span className="text-muted-foreground text-xs font-medium uppercase">
-        {operation.op === 'update' ? 'revises an existing fact' : 'new fact'}
+    <div className="bg-card flex flex-col gap-2 rounded-lg border p-3">
+      {/* Adding and revising are different decisions, so they don't look alike:
+          a revision replaces something already agreed. */}
+      <span
+        className={`w-fit rounded px-1.5 py-0.5 text-[0.65rem] font-medium tracking-wide uppercase ring-1 ${
+          operation.op === 'update'
+            ? 'bg-attention-subtle text-attention ring-attention/20'
+            : 'bg-brand/10 text-brand ring-brand/20'
+        }`}
+      >
+        {operation.op === 'update' ? 'revises a fact' : 'new fact'}
       </span>
 
       {editing ? (

@@ -39,6 +39,15 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+    /* NL is the interpreted, personal reading — it gets the accent. IR stays
+       neutral, because the record is nobody's point of view. */
+    --color-brand: var(--brand);
+    --color-brand-foreground: var(--brand-foreground);
+    --color-brand-subtle: var(--brand-subtle);
+    /* Something is waiting on a person. */
+    --color-attention: var(--attention);
+    --color-attention-foreground: var(--attention-foreground);
+    --color-attention-subtle: var(--attention-subtle);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -72,6 +81,12 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
+    --brand: oklch(0.53 0.19 274);
+    --brand-foreground: oklch(0.99 0 0);
+    --brand-subtle: oklch(0.96 0.02 274);
+    --attention: oklch(0.62 0.15 62);
+    --attention-foreground: oklch(0.99 0 0);
+    --attention-subtle: oklch(0.96 0.03 75);
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
@@ -102,6 +117,12 @@
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
+    --brand: oklch(0.65 0.17 274);
+    --brand-foreground: oklch(0.15 0 0);
+    --brand-subtle: oklch(0.28 0.05 274);
+    --attention: oklch(0.72 0.14 62);
+    --attention-foreground: oklch(0.15 0 0);
+    --attention-subtle: oklch(0.29 0.04 75);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -123,6 +144,15 @@
     }
   body {
     @apply bg-background text-foreground;
+    /* A barely-there wash so the panel reads as a surface sitting on the page
+       rather than a border drawn on the same flat white. */
+    background-image:
+      radial-gradient(
+        ellipse 80% 50% at 50% -10%,
+        color-mix(in oklch, var(--brand) 7%, transparent),
+        transparent
+      );
+    background-attachment: fixed;
     }
   html {
     @apply font-sans;

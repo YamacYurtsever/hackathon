@@ -57,7 +57,7 @@ export function NewProjectPage() {
             </div>
             {error && <p className="text-destructive text-sm">{error}</p>}
             <div className="flex gap-2">
-              <Button type="submit" disabled={submitting}>
+              <Button type="submit" variant="brand" disabled={submitting}>
                 {submitting ? 'Creating…' : 'Create project'}
               </Button>
               <Button

@@ -63,6 +63,12 @@ export function ProjectPage() {
   const [mode, setMode] = useState<Mode>(() => storedMode(projectId))
   const [highlightId, setHighlightId] = useState<string | undefined>()
 
+  // Entries this viewer merged themselves. "Since you last looked" means
+  // changes you haven't seen — and you have very much seen the ones you just
+  // approved. Tracked by id rather than bumping the last-viewed clock, so
+  // merging one thing doesn't quietly bury everything else you hadn't read.
+  const [mergedHere, setMergedHere] = useState<Set<string>>(new Set())
+
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -157,6 +163,11 @@ export function ProjectPage() {
     switchMode('ir')
   }
 
+  function noteMerged(ids: string[]) {
+    if (!ids.length) return
+    setMergedHere((seen) => new Set([...seen, ...ids]))
+  }
+
   function dismissDigest() {
     setDigest([])
     if (projectId)
@@ -205,6 +216,7 @@ export function ProjectPage() {
       api.submitChanges(projectId, proposal.text, operations),
     )
     if (done) {
+      noteMerged(done.merged)
       setProposal(null)
       refresh()
     }
@@ -219,13 +231,15 @@ export function ProjectPage() {
     setBusy(true)
 
     let failed = 0
+    const landed: string[] = []
     for (const pending of requests) {
       try {
-        await api.mergeRequest(projectId, pending.id)
+        landed.push((await api.mergeRequest(projectId, pending.id)).merged)
       } catch {
         failed += 1
       }
     }
+    noteMerged(landed)
 
     setBusy(false)
     if (failed > 0)
@@ -274,7 +288,11 @@ export function ProjectPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Digest entries={digest} members={members} onDismiss={dismissDigest} />
+            <Digest
+              entries={digest.filter((entry) => !mergedHere.has(entry.id))}
+              members={members}
+              onDismiss={dismissDigest}
+            />
             <PendingRequests
               requests={requests}
               members={members}
@@ -284,7 +302,10 @@ export function ProjectPage() {
               busy={busy}
               onMerge={(id) =>
                 projectId &&
-                run(() => api.mergeRequest(projectId, id)).then(refresh)
+                run(() => api.mergeRequest(projectId, id)).then((result) => {
+                  if (result) noteMerged([result.merged])
+                  refresh()
+                })
               }
               onMergeAll={handleMergeAll}
               onReject={(id) =>
@@ -329,23 +350,28 @@ export function ProjectPage() {
             arrow between them is the point of the whole screen: prose on one
             side, the entries it was built from on the other. */}
         <div className="flex shrink-0 justify-center">
-          <div className="bg-muted relative flex items-center rounded-full p-1">
+          <div className="bg-muted ring-border/60 relative flex items-center rounded-full p-1 ring-1">
             {/* One pill that slides, rather than two that light up — the
                 movement is what makes the two sides read as one thing seen
-                two ways. */}
+                two ways. It changes colour as it travels, because the accent
+                means "interpreted for you" and the record isn't. */}
             <span
               aria-hidden
               // Tailwind v4's translate-x-* sets the CSS `translate` property,
               // not `transform` — so transition-transform animates nothing.
-              className={`bg-background absolute top-1 bottom-1 left-1 w-16 rounded-full shadow-sm transition-[translate] duration-200 ease-out motion-reduce:transition-none ${
-                mode === 'ir' ? 'translate-x-full' : 'translate-x-0'
+              className={`absolute top-1 bottom-1 left-1 w-16 rounded-full shadow-sm transition-[translate,background-color] duration-200 ease-out motion-reduce:transition-none ${
+                mode === 'ir'
+                  ? 'bg-foreground translate-x-full'
+                  : 'bg-brand shadow-brand/30 translate-x-0'
               }`}
             />
             <button
               type="button"
               onClick={() => switchMode('nl')}
               className={`relative w-16 rounded-full py-1 text-sm font-medium transition-colors ${
-                mode === 'nl' ? 'text-foreground' : 'text-muted-foreground'
+                mode === 'nl'
+                  ? 'text-brand-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               NL
@@ -354,7 +380,9 @@ export function ProjectPage() {
               type="button"
               onClick={() => switchMode('ir')}
               className={`relative w-16 rounded-full py-1 text-sm font-medium transition-colors ${
-                mode === 'ir' ? 'text-foreground' : 'text-muted-foreground'
+                mode === 'ir'
+                  ? 'text-background'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               IR
@@ -398,6 +426,7 @@ export function ProjectPage() {
             dropped={proposal.dropped}
             entriesById={entriesById}
             busy={busy}
+            viewerIsAdmin={viewerIsAdmin}
             onSubmit={handleSubmit}
             onDiscard={() => setProposal(null)}
           />

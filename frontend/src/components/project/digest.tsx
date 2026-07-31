@@ -37,7 +37,15 @@ export function Digest({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        render={<Button variant="outline">{entries.length} new</Button>}
+        render={
+          <Button
+            variant="outline"
+            className="border-brand/30 bg-brand-subtle text-brand hover:bg-brand/15"
+          >
+            <span className="bg-brand size-1.5 animate-pulse rounded-full" />
+            {entries.length} new
+          </Button>
+        }
       />
       <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
@@ -60,6 +68,7 @@ export function Digest({
 
         <DialogFooter>
           <Button
+            variant="brand"
             onClick={() => {
               setOpen(false)
               onDismiss()

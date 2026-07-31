@@ -164,7 +164,7 @@ Pure backend — no UI yet. Exercised via the API client and curl. Prove the pip
 - [X] `GET /projects/:id/requests` — pending requests for the project
 - [X] `PUT /projects/:id/requests/:rid` — hand-edit a pending request's operation. Allowed for its author and for admins
 - [X] A merged entry's `author` is the original proposer, never the admin who merged or edited it — neither is authorship
-- [X] Submitting always creates a request, even when the author is an admin — one path, and the merge step stays demoable
+- [X] Submitting always creates a request. An admin's own request is then merged in the same call, so there is still exactly one path into the IR — create-then-merge — and authorship is assigned exactly as it is for anyone else
 - [X] `POST /projects/:id/requests/:rid/merge` / `…/reject` — admin only, enforced server-side, no exceptions. Merging is the only write to the IR, and one request carries one change, so there's nothing to apply partially
 - [X] Rejecting deletes the request; a rejected proposal isn't a fact and doesn't belong in history
 - [X] Reject an `update` whose target entry no longer exists rather than silently recreating it
@@ -280,7 +280,9 @@ An edited request doesn't reassign authorship: the applied entry's `author` stay
 
 Settled:
 
-- **Always queue.** Even when the author is an admin, submitting creates a request they then merge. One path instead of two, and the merge step is demoable without a second account.
+- **An admin's own changes land on confirm.** Gate 1 asks the author "is this what you meant?"; gate 2 asks an admin "should this be in the project?". When those are the same person, gate 2 is a dialog with one possible answer, and making them click it teaches them to click merge without reading. So an admin's submission is merged in the same request — still via create-then-merge, so the IR has one write path and authorship is unchanged. Everyone else's still waits.
+
+  (This reverses an earlier decision to always queue, which was made to keep the merge step demoable without a second account. The seeded profiles give us that account, so the demo no longer needs the friction.)
 - **No bounce-back.** An admin edit doesn't return to the author for re-confirmation; it lands on merge.
 
 Same facts, two renderings. **NL** — the natural-language reading — is written for you and nobody else sees it in quite that form. **IR** is the neutral timeline everyone shares, identical for every member: time, author, and the structured fact itself. Flipping between them makes "the IR is the source of truth" something you can *see* rather than something we assert — and it's the natural demo moment: switch profiles, watch the summary change completely, flip to IR and it's byte-identical.
@@ -351,6 +353,7 @@ The reading half — the same facts, re-projected through *your* context, plus a
 - [X] "Since you last viewed" — last-viewed timestamp per project in localStorage, `GET /changes?since=`
 - [X] Digest dismisses and updates the stored timestamp
 - [X] No button when nothing changed (the cached summary is served as-is)
+- [X] Changes you merged yourself never count as new. "Since you last looked" means what you haven't seen, and you have very much seen what you just approved — most visibly for an admin, whose own submissions land immediately and would otherwise announce themselves back. Tracked by entry id rather than by bumping the last-viewed clock, so approving one thing doesn't quietly bury everything else you hadn't read yet
 - [X] A header button opening a centred dialog, not an inline banner — a banner pushed the panel down on every open for something you usually only glance at. Digest, pending queue, and members all use the same dialog now, so the header reads as one row of controls
 
 **Frontend — the empty project**
@@ -427,3 +430,4 @@ Settled:
 - [ ] Project change timeline view
 - [ ] Third party integration
 - [ ] Evidence tracking for external sources
+- [ ] Change ir entry schema for content to be a string instead of object

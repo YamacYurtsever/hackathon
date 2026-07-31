@@ -38,10 +38,11 @@ export function Composer({
         // Starts one line tall, so the placeholder sits centred against the
         // send button, and grows with what you type (the base textarea already
         // sets field-sizing-content; min-h-16 is what was forcing four rows).
-        className="max-h-40 min-h-0 resize-none overflow-y-auto py-2.5 pr-12"
+        className="max-h-40 min-h-0 resize-none overflow-y-auto rounded-xl bg-card py-2.5 pr-12 shadow-sm focus-visible:border-brand focus-visible:ring-brand/25"
       />
       <Button
         type="submit"
+        variant="brand"
         size="icon-sm"
         disabled={busy || !text.trim()}
         className="absolute top-1/2 right-2 -translate-y-1/2"

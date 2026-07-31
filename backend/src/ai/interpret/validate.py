@@ -1,5 +1,7 @@
 """Checks on what the model returned. Pure functions, no network."""
 
+from ..ids import strip_ids_from_content
+
 # Envelope fields the model must never author. Stripped, not rejected.
 RESERVED_KEYS = ("id", "author", "created_at")
 
@@ -23,10 +25,16 @@ def clean_operation(raw: object, existing_ids: set[str]) -> dict | None:
     if op not in ("create", "update"):
         return None
 
+    # A proposal is prose too, and it lands in the feed and the digest where
+    # there's no citation machinery to excuse an id sitting in a sentence.
     operation = {
         "op": op,
-        "content": {k: v for k, v in content.items() if k not in RESERVED_KEYS},
+        "content": strip_ids_from_content(
+            {k: v for k, v in content.items() if k not in RESERVED_KEYS}
+        ),
     }
+    if not (operation["content"].get("statement") or "").strip():
+        return None
 
     if op == "update":
         target_id = raw.get("target_id")

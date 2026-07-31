@@ -133,7 +133,24 @@ def submit_requests(project_id: str):
         store.create_request(project_id, author, source_text, operation)
         for operation in cleaned
     ]
-    return jsonify(created), 201
+
+    # An admin submitting their own change has already made the only decision
+    # gate 2 exists to capture — asking them to merge what they just confirmed
+    # is a dialog that only ever gets one answer. It still goes through
+    # create-then-merge rather than writing directly, so merging stays the one
+    # path into the IR and authorship is assigned exactly as before.
+    if author in project["admins"]:
+        merged, still_pending = [], []
+        for pending in created:
+            entry_id, failure = store.merge_request(pending["id"])
+            (still_pending if failure else merged).append(
+                pending if failure else entry_id
+            )
+        if merged:
+            reprojection.invalidate_project(project_id)
+        return jsonify({"requests": still_pending, "merged": merged}), 201
+
+    return jsonify({"requests": created, "merged": []}), 201
 
 
 @bp.get("/api/projects/<project_id>/requests")

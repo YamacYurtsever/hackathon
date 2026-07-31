@@ -36,14 +36,20 @@ function EntryRow({
   return (
     <div
       ref={ref}
-      className={`flex flex-col gap-1 border-b py-3 transition-colors first:pt-0 last:border-b-0 last:pb-0 ${
-        highlighted ? 'bg-secondary rounded' : ''
+      className={`group/entry -mx-3 flex flex-col gap-1 rounded-lg border-b px-3 py-3 transition-colors first:pt-0 last:border-b-0 last:pb-0 ${
+        highlighted ? 'bg-brand-subtle ring-brand/25 ring-1' : 'hover:bg-muted/50'
       }`}
     >
       <div className="text-muted-foreground flex items-baseline gap-2 text-xs">
-        {citation !== undefined && <span className="font-medium">[{citation}]</span>}
-        <span>{timeOf(entry.created_at)}</span>
-        <span className="font-medium">{author?.username ?? 'unknown'}</span>
+        {citation !== undefined && (
+          <span className="bg-brand/10 text-brand rounded px-1.5 py-0.5 font-medium tabular-nums">
+            {citation}
+          </span>
+        )}
+        <span className="tabular-nums">{timeOf(entry.created_at)}</span>
+        <span className="text-foreground/70 font-medium">
+          {author?.username ?? 'unknown'}
+        </span>
       </div>
 
       <p className="text-sm">{statementOf(entry)}</p>
@@ -79,7 +85,7 @@ export function Feed({
 
   if (entries.length === 0) {
     return (
-      <Card className="min-h-0 flex-1 py-0">
+      <Card className="ring-border/70 min-h-0 flex-1 py-0 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.12)]">
         <CardContent className="text-muted-foreground p-6 text-center text-sm">
           Nothing recorded yet. Say something below — a statement becomes a fact
           once an admin approves it, a question just gets answered.
@@ -89,7 +95,7 @@ export function Feed({
   }
 
   return (
-    <Card className="min-h-0 flex-1 overflow-hidden py-0">
+    <Card className="ring-border/70 min-h-0 flex-1 overflow-hidden py-0 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.12)]">
       <CardContent className="flex h-full flex-col overflow-y-auto p-6">
         {visible.map((entry) => (
           <EntryRow

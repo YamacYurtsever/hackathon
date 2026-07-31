@@ -68,21 +68,42 @@ def stub_model(monkeypatch):
     return calls
 
 
-def merge_a_change(client, project_id, operations=None):
-    """Submits and merges changes, returning the affected entry ids."""
-    requests = client.post(
+def submit(client, project_id, operations=None):
+    """Submits changes, returning {"requests": [...], "merged": [...]}."""
+    return client.post(
         f"/api/projects/{project_id}/requests",
         json={
             "text": SOURCE,
             "operations": operations or [{"op": "create", "content": content()}],
         },
     ).get_json()
-    return [
-        client.post(
-            f"/api/projects/{project_id}/requests/{pending['id']}/merge"
-        ).get_json()["merged"]
-        for pending in requests
-    ]
+
+
+def merge_a_change(client, project_id, operations=None):
+    """Gets changes into the IR, returning the affected entry ids.
+
+    The caller here is the admin who owns the project, so submitting merges
+    on the spot — there is nothing left to approve.
+    """
+    return submit(client, project_id, operations)["merged"]
+
+
+@pytest.fixture
+def queued(client, project, signed_up):
+    """Submits as a non-admin, so the request is still pending, then puts the
+    admin back in the session to act on it. Returns the pending requests."""
+
+    def _queued(operations=None):
+        client.post("/api/logout")
+        member = signed_up("bob")
+        client.post(f"/api/projects/{project['id']}/join")
+        pending = submit(client, project["id"], operations)["requests"]
+
+        client.post("/api/logout")
+        client.post("/api/login", json={"username": "ada", "password": "pw"})
+        return pending, member
+
+    return _queued
 
 
 # --- input: one box, two paths ---
@@ -179,31 +200,40 @@ def test_non_member_cannot_use_input(client, project, signed_up, stub_model):
 # --- write path ---
 
 
-def test_submitting_creates_a_pending_request_even_for_an_admin(client, project, stub_model):
+def test_an_admins_own_submission_lands_immediately(client, project, stub_model):
+    """Confirming at gate 1 is the only decision gate 2 would have asked for,
+    so an admin isn't made to approve what they just approved."""
     response = client.post(
         f"/api/projects/{project['id']}/requests",
         json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
     )
 
     assert response.status_code == 201
-    # Submitting is not merging: being an admin doesn't skip the queue.
+    body = response.get_json()
+    assert body["requests"] == []
+    assert len(body["merged"]) == 1
+    assert len(store.entries_for_project(project["id"])) == 1
+    assert store.requests_for_project(project["id"]) == []
+
+
+def test_a_members_submission_still_waits(client, project, queued, stub_model):
+    """The gate is only skipped for someone who could open it anyway."""
+    pending, _ = queued()
+
+    assert len(pending) == 1
     assert len(store.requests_for_project(project["id"])) == 1
     assert store.entries_for_project(project["id"]) == []
 
 
-def test_each_proposed_change_becomes_its_own_request(client, project, stub_model):
+def test_each_proposed_change_becomes_its_own_request(client, project, queued, stub_model):
     # So an admin can merge one and reject another, rather than being handed
     # a bundle to take or leave.
-    created = client.post(
-        f"/api/projects/{project['id']}/requests",
-        json={
-            "text": SOURCE,
-            "operations": [
-                {"op": "create", "content": content(statement="First.")},
-                {"op": "create", "content": content(statement="Second.")},
-            ],
-        },
-    ).get_json()
+    created, _ = queued(
+        [
+            {"op": "create", "content": content(statement="First.")},
+            {"op": "create", "content": content(statement="Second.")},
+        ]
+    )
 
     assert len(created) == 2
     pending = store.requests_for_project(project["id"])
@@ -211,17 +241,13 @@ def test_each_proposed_change_becomes_its_own_request(client, project, stub_mode
     assert {p["operation"]["content"]["statement"] for p in pending} == {"First.", "Second."}
 
 
-def test_one_request_can_be_merged_while_another_is_rejected(client, project, stub_model):
-    first, second = client.post(
-        f"/api/projects/{project['id']}/requests",
-        json={
-            "text": SOURCE,
-            "operations": [
-                {"op": "create", "content": content(statement="Keep this.")},
-                {"op": "create", "content": content(statement="Drop this.")},
-            ],
-        },
-    ).get_json()
+def test_one_request_can_be_merged_while_another_is_rejected(client, project, queued, stub_model):
+    (first, second), _ = queued(
+        [
+            {"op": "create", "content": content(statement="Keep this.")},
+            {"op": "create", "content": content(statement="Drop this.")},
+        ]
+    )
 
     client.post(f"/api/projects/{project['id']}/requests/{first['id']}/merge")
     client.post(f"/api/projects/{project['id']}/requests/{second['id']}/reject")
@@ -231,8 +257,13 @@ def test_one_request_can_be_merged_while_another_is_rejected(client, project, st
     assert store.requests_for_project(project["id"]) == []
 
 
-def test_merging_applies_the_change_and_clears_the_request(client, project, stub_model):
-    applied = merge_a_change(client, project["id"])
+def test_merging_applies_the_change_and_clears_the_request(client, project, queued, stub_model):
+    [pending], _ = queued()
+    applied = [
+        client.post(
+            f"/api/projects/{project['id']}/requests/{pending['id']}/merge"
+        ).get_json()["merged"]
+    ]
 
     entries = store.entries_for_project(project["id"])
     assert [entry["id"] for entry in entries] == applied
@@ -240,18 +271,9 @@ def test_merging_applies_the_change_and_clears_the_request(client, project, stub
     assert store.requests_for_project(project["id"]) == []
 
 
-def test_applied_entry_is_authored_by_the_proposer(client, project, signed_up, stub_model):
+def test_applied_entry_is_authored_by_the_proposer(client, project, queued, stub_model):
     # Bob submits; Ada (admin) merges. The fact is Bob's.
-    client.post("/api/logout")
-    bob = signed_up("bob")
-    client.post(f"/api/projects/{project['id']}/join")
-    [request] = client.post(
-        f"/api/projects/{project['id']}/requests",
-        json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
-    ).get_json()
-
-    client.post("/api/logout")
-    client.post("/api/login", json={"username": "ada", "password": "pw"})
+    [request], bob = queued()
     client.post(f"/api/projects/{project['id']}/requests/{request['id']}/merge")
 
     assert store.entries_for_project(project["id"])[0]["author"] == bob["id"]
@@ -261,10 +283,7 @@ def test_non_admin_cannot_merge(client, project, signed_up, stub_model):
     client.post("/api/logout")
     signed_up("bob")
     client.post(f"/api/projects/{project['id']}/join")
-    [request] = client.post(
-        f"/api/projects/{project['id']}/requests",
-        json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
-    ).get_json()
+    [request] = submit(client, project["id"])["requests"]
 
     response = client.post(
         f"/api/projects/{project['id']}/requests/{request['id']}/merge"
@@ -309,11 +328,8 @@ def test_update_targeting_a_vanished_entry_is_refused(client, project, stub_mode
     assert len(store.requests_for_project(project["id"])) == 1
 
 
-def test_rejecting_deletes_the_request(client, project, stub_model):
-    [request] = client.post(
-        f"/api/projects/{project['id']}/requests",
-        json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
-    ).get_json()
+def test_rejecting_deletes_the_request(client, project, queued, stub_model):
+    [request], _ = queued()
 
     assert (
         client.post(
@@ -325,11 +341,8 @@ def test_rejecting_deletes_the_request(client, project, stub_model):
     assert store.entries_for_project(project["id"]) == []
 
 
-def test_author_can_edit_their_pending_request(client, project, stub_model):
-    [request] = client.post(
-        f"/api/projects/{project['id']}/requests",
-        json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
-    ).get_json()
+def test_author_can_edit_their_pending_request(client, project, queued, stub_model):
+    [request], _ = queued()
 
     response = client.put(
         f"/api/projects/{project['id']}/requests/{request['id']}",
@@ -340,12 +353,9 @@ def test_author_can_edit_their_pending_request(client, project, stub_model):
     assert response.get_json()["operation"]["content"]["statement"] == "Corrected."
 
 
-def test_hand_edits_are_validated_too(client, project, stub_model):
+def test_hand_edits_are_validated_too(client, project, queued, stub_model):
     # The editable path skips the model, so it must not skip the model's checks.
-    [request] = client.post(
-        f"/api/projects/{project['id']}/requests",
-        json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
-    ).get_json()
+    [request], _ = queued()
 
     # An update aimed at an entry that doesn't exist would land as a create.
     assert (
@@ -366,14 +376,12 @@ def test_hand_edits_are_validated_too(client, project, stub_model):
     )
 
 
-def test_stranger_cannot_edit_someone_elses_request(client, project, signed_up, stub_model):
-    [request] = client.post(
-        f"/api/projects/{project['id']}/requests",
-        json={"text": SOURCE, "operations": [{"op": "create", "content": content()}]},
-    ).get_json()
+def test_stranger_cannot_edit_someone_elses_request(client, project, queued, signed_up, stub_model):
+    # Bob proposes; Carol is a member but neither its author nor an admin.
+    [request], _ = queued()
 
     client.post("/api/logout")
-    signed_up("bob")
+    signed_up("carol")
     client.post(f"/api/projects/{project['id']}/join")
 
     response = client.put(
