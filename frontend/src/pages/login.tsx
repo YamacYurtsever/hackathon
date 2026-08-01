@@ -2,9 +2,6 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { AuthLayout } from '@/components/auth-layout'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 
@@ -22,7 +19,7 @@ export function LoginPage() {
     setSubmitting(true)
     try {
       setProfile(await api.login(username, password))
-      navigate('/')
+      navigate('/home')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {
@@ -36,47 +33,42 @@ export function LoginPage() {
       subtitle="Pick up where the project left off."
       footer={
         <>
-          No account?{' '}
-          <Link to="/signup" className="text-brand font-medium hover:underline">
-            Sign up
-          </Link>
+          No account? <Link to="/signup">Sign up</Link>
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="username">Username</Label>
-          <Input
+      <form onSubmit={handleSubmit} className="auth__form">
+        <div className="auth__field">
+          <label htmlFor="username" className="auth__label">
+            Username
+          </label>
+          <input
             id="username"
+            className="auth__input"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
-            className="focus-visible:border-brand focus-visible:ring-brand/25 h-10"
             required
           />
         </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="password">Password</Label>
-          <Input
+        <div className="auth__field">
+          <label htmlFor="password" className="auth__label">
+            Password
+          </label>
+          <input
             id="password"
             type="password"
+            className="auth__input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
-            className="focus-visible:border-brand focus-visible:ring-brand/25 h-10"
             required
           />
         </div>
-        {error && <p className="text-destructive text-sm">{error}</p>}
-        <Button
-          type="submit"
-          variant="brand"
-          size="lg"
-          className="mt-1 w-full"
-          disabled={submitting}
-        >
+        {error && <p className="auth__error">{error}</p>}
+        <button type="submit" className="auth__submit" disabled={submitting}>
           {submitting ? 'Logging in…' : 'Log in'}
-        </Button>
+        </button>
       </form>
     </AuthLayout>
   )

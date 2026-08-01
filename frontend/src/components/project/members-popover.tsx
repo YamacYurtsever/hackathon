@@ -6,6 +6,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { themedDialogClass } from '@/lib/themed-dialog'
+import type { UiTheme } from '@/lib/ui-theme'
 import type { Member } from '@/types/ir'
 
 /** Members are reference material, not part of the conversation — they live
@@ -16,12 +18,14 @@ export function MembersPopover({
   currentUserId,
   viewerIsAdmin,
   busy,
+  theme = 'classic',
   onPromote,
 }: {
   members: Member[]
   currentUserId: string
   viewerIsAdmin: boolean
   busy: boolean
+  theme?: UiTheme
   onPromote: (userId: string) => void
 }) {
   return (
@@ -33,7 +37,12 @@ export function MembersPopover({
           </Button>
         }
       />
-      <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        className={themedDialogClass(
+          theme,
+          'max-h-[85svh] overflow-y-auto sm:max-w-lg',
+        )}
+      >
         <DialogHeader>
           <DialogTitle>
             {members.length} {members.length === 1 ? 'member' : 'members'}

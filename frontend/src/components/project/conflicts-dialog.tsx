@@ -10,6 +10,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import { themedDialogClass } from '@/lib/themed-dialog'
+import type { UiTheme } from '@/lib/ui-theme'
 import type { Conflict, IREntry, Member } from '@/types/ir'
 
 function statementOf(entry: IREntry): string {
@@ -128,6 +130,7 @@ export function ConflictsDialog({
   members,
   isAdmin,
   busy,
+  theme = 'classic',
   onEdit,
   onDiscard,
   onDismiss,
@@ -137,6 +140,7 @@ export function ConflictsDialog({
   members: Member[]
   isAdmin: boolean
   busy: boolean
+  theme?: UiTheme
   onEdit: (conflictId: string, entryId: string, statement: string) => void
   onDiscard: (conflictId: string, entryId: string) => void
   onDismiss: (conflictId: string) => void
@@ -160,7 +164,12 @@ export function ConflictsDialog({
           </Button>
         }
       />
-      <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent
+        className={themedDialogClass(
+          theme,
+          'max-h-[85svh] overflow-y-auto sm:max-w-2xl',
+        )}
+      >
         <DialogHeader>
           <DialogTitle>
             {conflicts.length}{' '}

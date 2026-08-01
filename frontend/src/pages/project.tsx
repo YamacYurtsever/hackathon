@@ -18,6 +18,7 @@ import { api } from '@/lib/api'
 import { citationNumbers } from '@/lib/citations'
 import { refusalFor } from '@/lib/documents'
 import { useAuth } from '@/lib/auth-context'
+import { readUiTheme, writeUiTheme, type UiTheme } from '@/lib/ui-theme'
 import type {
   ChangeRequest,
   Conflict,
@@ -46,6 +47,7 @@ export function ProjectPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const { profile } = useAuth()
+  const [theme, setTheme] = useState<UiTheme>(() => readUiTheme())
 
   const [project, setProject] = useState<Project | null>(null)
   const [members, setMembers] = useState<Member[]>([])
@@ -317,9 +319,15 @@ export function ProjectPage() {
     }
   }
 
+  function toggleTheme() {
+    const next: UiTheme = theme === 'obsidian' ? 'classic' : 'obsidian'
+    writeUiTheme(next)
+    setTheme(next)
+  }
+
   if (loading) {
     return (
-      <AppLayout>
+      <AppLayout theme={theme} onToggleTheme={toggleTheme}>
         <p className="text-muted-foreground">Loading…</p>
       </AppLayout>
     )
@@ -327,14 +335,14 @@ export function ProjectPage() {
 
   if (project === null) {
     return (
-      <AppLayout>
+      <AppLayout theme={theme} onToggleTheme={toggleTheme}>
         <p className="text-destructive">{error || 'Project not found'}</p>
       </AppLayout>
     )
   }
 
   return (
-    <AppLayout fill>
+    <AppLayout fill theme={theme} onToggleTheme={toggleTheme}>
       {/* The whole view is the drop target — there's no import screen, because
           a document is a longer message and enters where a message enters. */}
       <DocumentDrop disabled={busy || reading !== null} onDrop={handleFiles}>
@@ -342,7 +350,7 @@ export function ProjectPage() {
       <div className="flex h-full flex-col gap-4">
         <div className="flex shrink-0 items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold">{project.name}</h1>
+            <h1 className="text-4xl font-semibold tracking-tight">{project.name}</h1>
             <p className="text-muted-foreground text-sm">
               {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
             </p>
@@ -359,6 +367,7 @@ export function ProjectPage() {
               members={members}
               isAdmin={viewerIsAdmin}
               busy={busy}
+              theme={theme}
               onEdit={(conflictId, entryId, statement) =>
                 projectId &&
                 run(() =>
@@ -408,6 +417,7 @@ export function ProjectPage() {
               currentUserId={profile?.id ?? ''}
               viewerIsAdmin={viewerIsAdmin}
               busy={busy}
+              theme={theme}
               onPromote={(userId) =>
                 projectId &&
                 run(() => api.promoteMember(projectId, userId)).then(refresh)
@@ -422,7 +432,7 @@ export function ProjectPage() {
               variant="outline"
               onClick={() =>
                 projectId &&
-                run(() => api.exitProject(projectId)).then(() => navigate('/'))
+                run(() => api.exitProject(projectId)).then(() => navigate('/home'))
               }
             >
               Leave
@@ -522,7 +532,7 @@ export function ProjectPage() {
           />
         )}
 
-        {reading && <DocumentReading name={reading} />}
+        {reading && <DocumentReading name={reading} theme={theme} />}
 
         {documentRead && (
           <DocumentReview
@@ -531,6 +541,7 @@ export function ProjectPage() {
             entriesById={entriesById}
             busy={busy}
             viewerIsAdmin={viewerIsAdmin}
+            theme={theme}
             onSubmit={handleSubmitDocument}
             onDiscard={() => setDocumentRead(null)}
           />

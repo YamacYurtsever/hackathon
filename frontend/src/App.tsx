@@ -4,6 +4,7 @@ import { AuthProvider } from '@/components/auth-provider'
 import { useAuth } from '@/lib/auth-context'
 import { HomePage } from '@/pages/home'
 import { InvitePage } from '@/pages/invite'
+import { LandingPage } from '@/pages/landing'
 import { LoginPage } from '@/pages/login'
 import { NewProjectPage } from '@/pages/new-project'
 import { ProfilePage } from '@/pages/profile'
@@ -19,7 +20,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
   const { profile, loading } = useAuth()
   if (loading) return null
-  return profile ? <Navigate to="/" replace /> : children
+  return profile ? <Navigate to="/home" replace /> : children
 }
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={<LandingPage />} />
           <Route
             path="/login"
             element={
@@ -44,7 +46,7 @@ function App() {
             }
           />
           <Route
-            path="/"
+            path="/home"
             element={
               <RequireAuth>
                 <HomePage />

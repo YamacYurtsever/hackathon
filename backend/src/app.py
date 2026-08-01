@@ -11,9 +11,24 @@ from routes import auth, pipeline, profiles, projects
 
 load_dotenv()
 
-# Vite dev server. Same host as the API (localhost) so the session cookie is
-# same-site and SameSite=Lax works without loosening anything.
-FRONTEND_ORIGIN = "http://localhost:5173"
+# Vite picks the next free port when 5173 is taken (often 5174). Same host as
+# the API (localhost) so the session cookie is same-site and SameSite=Lax works.
+_DEFAULT_ORIGINS = (
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+)
+
+
+def _frontend_origins() -> list[str]:
+    configured = os.environ.get("FRONTEND_ORIGIN", "").strip()
+    if not configured:
+        return list(_DEFAULT_ORIGINS)
+    # Comma-separated override; still keeps the defaults so a second Vite
+    # instance doesn't break login mid-demo.
+    extra = [o.strip() for o in configured.split(",") if o.strip()]
+    return list(dict.fromkeys([*_DEFAULT_ORIGINS, *extra]))
 
 
 def create_app() -> Flask:
@@ -24,7 +39,7 @@ def create_app() -> Flask:
     # that names it — this one is the backstop, not the explanation.
     app.config["MAX_CONTENT_LENGTH"] = MAX_BYTES + 1024 * 1024
     store.init_db(os.environ.get("DATABASE_PATH"))
-    CORS(app, origins=[FRONTEND_ORIGIN], supports_credentials=True)
+    CORS(app, origins=_frontend_origins(), supports_credentials=True)
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(profiles.bp)

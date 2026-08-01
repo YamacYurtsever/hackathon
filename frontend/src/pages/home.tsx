@@ -1,13 +1,21 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
-import { AppLayout } from '@/components/app-layout'
-import { buttonVariants } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth-context'
+import {
+  readHomeTheme,
+  writeHomeTheme,
+  type HomeTheme,
+} from '@/lib/home-theme'
 import type { Project } from '@/types/ir'
 
+import './home.css'
+
 export function HomePage() {
+  const { profile, setProfile } = useAuth()
+  const navigate = useNavigate()
+  const [theme, setTheme] = useState<HomeTheme>(() => readHomeTheme())
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -22,54 +30,91 @@ export function HomePage() {
       .finally(() => setLoading(false))
   }, [])
 
+  function toggleTheme() {
+    const next: HomeTheme = theme === 'obsidian' ? 'classic' : 'obsidian'
+    writeHomeTheme(next)
+    setTheme(next)
+  }
+
+  async function handleLogout() {
+    await api.logout()
+    setProfile(null)
+    navigate('/login')
+  }
+
   return (
-    <AppLayout>
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Your projects</h1>
-          <Link to="/projects/new" className={buttonVariants({ variant: 'brand' })}>
-            New project
+    <div className={`home home--${theme}`}>
+      <div className="home__noise" aria-hidden />
+      <div className="home__shell">
+        <div className="home__glow home__glow--tl" aria-hidden />
+        <div className="home__glow home__glow--br" aria-hidden />
+
+        <header className="home__nav">
+          <Link to="/home" className="home__logo">
+            <span className="home__mark">C</span>
+            <span className="home__word">Contextor</span>
           </Link>
-        </div>
 
-        {loading && <p className="text-muted-foreground">Loading…</p>}
-        {error && <p className="text-destructive">{error}</p>}
-
-        {!loading && !error && projects.length === 0 && (
-          <p className="text-muted-foreground">
-            You haven't joined any projects yet. Create one, or ask an admin for
-            an invite link.
-          </p>
-        )}
-
-        <div className="flex flex-col gap-3">
-          {projects.map((project) => (
-            <Link key={project.id} to={`/projects/${project.id}`} className="group">
-              <Card className="ring-border/70 group-hover:ring-brand/40 relative overflow-hidden shadow-sm transition-all group-hover:-translate-y-0.5 group-hover:shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_28px_-14px_rgb(0_0_0/0.18)]">
-                {/* An accent edge that arrives on hover, so the row feels
-                    reachable without shouting when it isn't. */}
-                <span className="bg-brand absolute inset-y-0 left-0 w-0.5 origin-top scale-y-0 transition-transform duration-200 group-hover:scale-y-100 motion-reduce:transition-none" />
-                <CardHeader>
-                  <CardTitle className="group-hover:text-brand transition-colors">
-                    {project.name}
-                  </CardTitle>
-                  <p className="text-muted-foreground flex items-center gap-2 text-sm">
-                    <span className="tabular-nums">
-                      {project.users.length}{' '}
-                      {project.users.length === 1 ? 'member' : 'members'}
-                    </span>
-                    <span className="bg-muted-foreground/40 size-1 rounded-full" />
-                    <span className="tabular-nums">
-                      {project.ir.length}{' '}
-                      {project.ir.length === 1 ? 'entry' : 'entries'}
-                    </span>
-                  </p>
-                </CardHeader>
-              </Card>
+          <div className="home__actions">
+            <button
+              type="button"
+              className="home__btn home__btn--ghost"
+              onClick={toggleTheme}
+            >
+              {theme === 'obsidian' ? 'Classic design' : 'New design'}
+            </button>
+            <Link to="/profile" className="home__link">
+              {profile?.username}
             </Link>
-          ))}
-        </div>
+            <button
+              type="button"
+              className="home__btn home__btn--ghost"
+              onClick={handleLogout}
+            >
+              Log out
+            </button>
+          </div>
+        </header>
+
+        <main className="home__main">
+          <div className="home__header">
+            <div>
+              <p className="home__eyebrow">Workspace</p>
+              <h1 className="home__title">Your projects</h1>
+            </div>
+            <Link to="/projects/new" className="home__btn home__btn--neon">
+              New project
+            </Link>
+          </div>
+
+          {loading && <p className="home__muted">Loading…</p>}
+          {error && <p className="home__error">{error}</p>}
+
+          {!loading && !error && projects.length === 0 && (
+            <div className="home__empty">
+              <p>
+                You haven&apos;t joined any projects yet. Create one, or ask an
+                admin for an invite link.
+              </p>
+              <Link to="/projects/new" className="home__btn home__btn--neon">
+                New project
+              </Link>
+            </div>
+          )}
+
+          <div className="home__list">
+            {projects.map((project) => (
+              <Link
+                key={project.id}
+                to={`/projects/${project.id}`}
+                className="home__card"
+              >
+                <h2 className="home__card-name">{project.name}</h2>
+              </Link>
+            ))}
+          </div>
+        </main>
       </div>
-    </AppLayout>
+    </div>
   )
 }

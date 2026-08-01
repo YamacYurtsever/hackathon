@@ -63,7 +63,7 @@ export function NewProjectPage() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/home')}
               >
                 Cancel
               </Button>

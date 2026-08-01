@@ -1,0 +1,373 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+/* Shared AppLayout — classic & obsidian differ only by colour tokens */
+
+.app-shell {
+  --as-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  position: relative;
+  min-height: 100svh;
+  background: var(--as-page);
+  color: var(--as-fg);
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+  padding: 1rem;
+}
+
+.app-shell--obsidian {
+  --as-page: #000000;
+  --as-shell: #0c0c0c;
+  --as-fg: #ebebeb;
+  --as-fg-muted: rgba(235, 235, 235, 0.55);
+  --as-fg-faint: rgba(235, 235, 235, 0.45);
+  --as-accent: #ccff00;
+  --as-accent-fg: #000000;
+  --as-border: rgba(255, 255, 255, 0.1);
+  --as-glass: rgba(255, 255, 255, 0.03);
+  --as-nav-border: rgba(255, 255, 255, 0.06);
+  --as-shell-ring: rgba(255, 255, 255, 0.1);
+  --as-grid: rgba(255, 255, 255, 0.03);
+  --as-noise: 0.12;
+  --as-glow-a: rgba(204, 255, 0, 0.1);
+  --as-glow-b: rgba(16, 185, 129, 0.08);
+  --as-frame-shadow: 0 25px 80px rgba(0, 0, 0, 0.55);
+  --as-dot: #ccff00;
+
+  --background: #0c0c0c;
+  --foreground: #ebebeb;
+  --card: #141414;
+  --card-foreground: #ebebeb;
+  --popover: #141414;
+  --popover-foreground: #ebebeb;
+  --primary: #ccff00;
+  --primary-foreground: #000000;
+  --secondary: #1a1a1a;
+  --secondary-foreground: #ebebeb;
+  --muted: #1a1a1a;
+  --muted-foreground: rgba(235, 235, 235, 0.55);
+  --accent: #1a1a1a;
+  --accent-foreground: #ebebeb;
+  --destructive: oklch(0.7 0.19 22);
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: rgba(204, 255, 0, 0.45);
+  --brand: #ccff00;
+  --brand-foreground: #000000;
+  --brand-subtle: rgba(204, 255, 0, 0.12);
+  --attention: #e8b84a;
+  --attention-foreground: #000000;
+  --attention-subtle: rgba(232, 184, 74, 0.15);
+}
+
+.app-shell--classic {
+  --as-page: #f4f4f5;
+  --as-shell: #ffffff;
+  --as-fg: #0a0a0a;
+  --as-fg-muted: rgba(10, 10, 10, 0.55);
+  --as-fg-faint: rgba(10, 10, 10, 0.45);
+  --as-accent: #0a0a0a;
+  --as-accent-fg: #ffffff;
+  --as-border: rgba(10, 10, 10, 0.1);
+  --as-glass: rgba(10, 10, 10, 0.03);
+  --as-nav-border: rgba(10, 10, 10, 0.08);
+  --as-shell-ring: rgba(10, 10, 10, 0.08);
+  --as-grid: rgba(10, 10, 10, 0.04);
+  --as-noise: 0.04;
+  --as-glow-a: rgba(10, 10, 10, 0.04);
+  --as-glow-b: rgba(10, 10, 10, 0.03);
+  --as-frame-shadow: 0 25px 80px rgba(0, 0, 0, 0.1);
+  --as-dot: #16a34a;
+
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --primary: #0a0a0a;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #0a0a0a;
+  --muted: #f4f4f5;
+  --muted-foreground: rgba(10, 10, 10, 0.55);
+  --accent: #f4f4f5;
+  --accent-foreground: #0a0a0a;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: rgba(10, 10, 10, 0.1);
+  --input: rgba(10, 10, 10, 0.12);
+  --ring: rgba(10, 10, 10, 0.25);
+  --brand: #0a0a0a;
+  --brand-foreground: #ffffff;
+  --brand-subtle: rgba(10, 10, 10, 0.06);
+  --attention: oklch(0.62 0.15 62);
+  --attention-foreground: #ffffff;
+  --attention-subtle: oklch(0.96 0.03 75);
+}
+
+.app-shell--fill {
+  height: 100svh;
+  max-height: 100svh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 768px) {
+  .app-shell {
+    padding: 1.5rem;
+  }
+}
+
+.app-shell *,
+.app-shell *::before,
+.app-shell *::after {
+  box-sizing: border-box;
+}
+
+.app-shell__noise {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: var(--as-noise);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 180px;
+  mix-blend-mode: overlay;
+}
+
+.app-shell__frame {
+  position: relative;
+  z-index: 1;
+  max-width: 1600px;
+  width: 100%;
+  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  background: var(--as-shell);
+  border-radius: 2.5rem;
+  box-shadow:
+    0 0 0 1px var(--as-shell-ring),
+    var(--as-frame-shadow);
+  overflow: hidden;
+  background-image:
+    linear-gradient(var(--as-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--as-grid) 1px, transparent 1px);
+  background-size: 60px 60px;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell--fill .app-shell__frame {
+  height: 100%;
+}
+
+.app-shell__glow {
+  position: absolute;
+  width: 380px;
+  height: 380px;
+  border-radius: 50%;
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-shell__glow--tl {
+  top: -100px;
+  left: -60px;
+  background: var(--as-glow-a);
+}
+
+.app-shell__glow--br {
+  bottom: 10%;
+  right: -80px;
+  background: var(--as-glow-b);
+}
+
+.app-shell__nav {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.5rem;
+  border-bottom: 1px solid var(--as-nav-border);
+  flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+  .app-shell__nav {
+    padding: 1.25rem 2rem;
+  }
+}
+
+.app-shell__logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: var(--as-fg);
+}
+
+.app-shell__mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 0.75rem;
+  background: var(--as-accent);
+  color: var(--as-accent-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.06em;
+}
+
+.app-shell__word {
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.04em;
+}
+
+.app-shell__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.app-shell__status {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 10px;
+  color: var(--as-fg-faint);
+  margin-right: 0.35rem;
+}
+
+@media (min-width: 720px) {
+  .app-shell__status {
+    display: flex;
+  }
+}
+
+.app-shell__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--as-dot);
+  animation: app-shell-pulse 2s ease-in-out infinite;
+}
+
+.app-shell__link,
+.app-shell__btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  border-radius: 9999px;
+  padding: 0.55rem 1rem;
+  transition:
+    transform 0.3s var(--as-ease),
+    background 0.3s var(--as-ease),
+    border-color 0.3s var(--as-ease),
+    color 0.3s var(--as-ease);
+}
+
+.app-shell__link {
+  background: transparent;
+  color: var(--as-fg-muted);
+  border: 1px solid transparent;
+}
+
+.app-shell__link:hover {
+  color: var(--as-fg);
+  background: var(--as-glass);
+}
+
+.app-shell__btn--ghost {
+  background: var(--as-glass);
+  backdrop-filter: blur(16px);
+  color: var(--as-fg);
+  border: 1px solid var(--as-border);
+}
+
+.app-shell__btn--ghost:hover {
+  border-color: color-mix(in srgb, var(--as-accent) 40%, transparent);
+  color: var(--as-accent);
+}
+
+.app-shell--classic .app-shell__btn--ghost:hover {
+  color: var(--as-fg);
+  border-color: rgba(10, 10, 10, 0.25);
+}
+
+.app-shell__main {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 1.5rem;
+  color: var(--foreground);
+}
+
+@media (min-width: 768px) {
+  .app-shell__main {
+    padding: 1.5rem 2rem 1.75rem;
+  }
+}
+
+.app-shell__main--fill {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell__main--fill > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.app-shell__main h1 {
+  font-family: var(--font-display);
+  letter-spacing: -0.04em;
+}
+
+.app-shell--obsidian .app-shell__main .bg-muted {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+@keyframes app-shell-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--as-dot) 50%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *,
+  .app-shell *::before,
+  .app-shell *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

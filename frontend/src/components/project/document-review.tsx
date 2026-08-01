@@ -11,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import type { UiTheme } from '@/lib/ui-theme'
+import { themedDialogClass } from '@/lib/themed-dialog'
 import type { DocumentResult, IREntry, Operation } from '@/types/ir'
 
 /** A document is many model calls, and a silent minute reads as a hang.
@@ -18,7 +20,13 @@ import type { DocumentResult, IREntry, Operation } from '@/types/ir'
  * There's no honest percentage to show — the passage count isn't known until
  * the read comes back — so this shows the thing that is true: what it's
  * reading, and how long it's been at it. */
-export function DocumentReading({ name }: { name: string }) {
+export function DocumentReading({
+  name,
+  theme = 'classic',
+}: {
+  name: string
+  theme?: UiTheme
+}) {
   const [seconds, setSeconds] = useState(0)
 
   useEffect(() => {
@@ -28,7 +36,7 @@ export function DocumentReading({ name }: { name: string }) {
 
   return (
     <Dialog open>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className={themedDialogClass(theme, 'sm:max-w-md')}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <LoaderCircleIcon className="text-brand size-4 animate-spin" />
@@ -101,6 +109,7 @@ export function DocumentReview({
   entriesById,
   busy,
   viewerIsAdmin,
+  theme = 'classic',
   onSubmit,
   onDiscard,
 }: {
@@ -110,6 +119,7 @@ export function DocumentReview({
   /** An admin's own changes are merged as soon as they confirm here, so this
    * dialog is their only gate rather than the first of two. */
   viewerIsAdmin: boolean
+  theme?: UiTheme
   onSubmit: (operations: Operation[]) => void
   onDiscard: () => void
 }) {
@@ -182,7 +192,12 @@ export function DocumentReview({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onDiscard()}>
-      <DialogContent className="flex max-h-[85svh] flex-col overflow-hidden sm:max-w-2xl">
+      <DialogContent
+        className={themedDialogClass(
+          theme,
+          'flex max-h-[85svh] flex-col overflow-hidden sm:max-w-2xl',
+        )}
+      >
         <DialogHeader>
           <DialogTitle>
             {edited.length} {edited.length === 1 ? 'fact' : 'facts'} read from{' '}

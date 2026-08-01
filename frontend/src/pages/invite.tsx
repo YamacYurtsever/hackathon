@@ -76,7 +76,7 @@ export function InvitePage() {
             <Button variant="brand" onClick={handleJoin} disabled={joining}>
               {joining ? 'Joining…' : `Join ${name}`}
             </Button>
-            <Button variant="ghost" onClick={() => navigate('/')}>
+            <Button variant="ghost" onClick={() => navigate('/home')}>
               Cancel
             </Button>
           </CardContent>
