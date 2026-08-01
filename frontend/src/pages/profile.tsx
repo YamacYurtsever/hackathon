@@ -13,9 +13,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
+import { readUiTheme, writeUiTheme, type UiTheme } from '@/lib/ui-theme'
 
 export function ProfilePage() {
   const { profile, setProfile } = useAuth()
+  const [theme, setTheme] = useState<UiTheme>(() => readUiTheme())
   const [description, setDescription] = useState(
     typeof profile?.content.description === 'string'
       ? profile.content.description
@@ -25,6 +27,12 @@ export function ProfilePage() {
   const [saving, setSaving] = useState(false)
 
   if (profile === null) return null
+
+  function toggleTheme() {
+    const next: UiTheme = theme === 'obsidian' ? 'classic' : 'obsidian'
+    writeUiTheme(next)
+    setTheme(next)
+  }
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault()
@@ -46,7 +54,7 @@ export function ProfilePage() {
   }
 
   return (
-    <AppLayout>
+    <AppLayout theme={theme} onToggleTheme={toggleTheme}>
       <Card>
         <CardHeader>
           <CardTitle>Your context</CardTitle>

@@ -63,7 +63,7 @@ export function HomePage() {
             >
               {theme === 'obsidian' ? 'Classic design' : 'New design'}
             </button>
-            <Link to="/profile" className="home__link">
+            <Link to="/profile" className="home__btn home__btn--ghost">
               {profile?.username}
             </Link>
             <button

@@ -56,7 +56,7 @@ export function AppLayout({
                 {theme === 'obsidian' ? 'Classic design' : 'New design'}
               </button>
             )}
-            <Link to="/profile" className="app-shell__link">
+            <Link to="/profile" className="app-shell__btn app-shell__btn--ghost">
               {profile?.username}
             </Link>
             <button
